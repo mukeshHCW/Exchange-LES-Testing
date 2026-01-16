@@ -1,0 +1,8 @@
+# Claude Code internal files
+.claude/
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
