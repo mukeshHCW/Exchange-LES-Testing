@@ -145,6 +145,7 @@ LES Writeback is configured using Microsoft Graph API to create a service princi
 Open PowerShell and connect with the required scopes:
 
 ```powershell
+# MS Graph PowerShell
 # Connect with required permissions
 Connect-MgGraph -Scopes "Organization.ReadWrite.All"
 Connect-MgGraph -Scopes "Directory.ReadWrite.All"
@@ -153,6 +154,7 @@ Connect-MgGraph -Scopes "Directory.ReadWrite.All"
 #### 3.2 Enable Organization for Sync
 
 ```powershell
+# MS Graph PowerShell
 # Get organization ID and enable on-premises sync
 $organizationId = (Get-MgOrganization).Id
 $params = @{
@@ -165,8 +167,9 @@ Update-MgOrganization -OrganizationId $organizationId -BodyParameter $params
 
 Create a service principal using the LES Writeback application template:
 
-**Using PowerShell:**
+**Using MS Graph PowerShell:**
 ```powershell
+# MS Graph PowerShell
 # Application Template ID for Exchange Online Attribute Writeback
 $body = @{
     displayName = "contoso.lab"  # Replace with your AD domain name
@@ -196,6 +199,7 @@ Content-type: application/json
 #### 3.4 Get Service Principal ID
 
 ```powershell
+# MS Graph PowerShell
 # Get the service principal ID (replace domain name with yours)
 $servicePrincipalId = Get-MgServicePrincipal -Filter "displayName eq 'contoso.lab'" | Select-Object -ExpandProperty Id
 $servicePrincipalId
@@ -203,8 +207,9 @@ $servicePrincipalId
 
 #### 3.5 Create Synchronization Job
 
-**Using PowerShell:**
+**Using MS Graph PowerShell:**
 ```powershell
+# MS Graph PowerShell
 $body = @{
    templateId = "Entra2ADExchangeOnlineAttributeWriteback"
 } | ConvertTo-Json -Depth 10
@@ -233,6 +238,7 @@ Content-type: application/json
 #### 3.6 Verify Job Creation
 
 ```powershell
+# MS Graph PowerShell
 $response = Invoke-MgGraphRequest `
    -Method GET `
    -Uri "https://graph.microsoft.com/beta/servicePrincipals/$servicePrincipalId/synchronization/jobs"
@@ -248,6 +254,7 @@ To restrict which AD objects receive synchronized changes, modify the job schema
 
 **Step 1: Get the job schema:**
 ```powershell
+# MS Graph PowerShell
 $jobId = "your-job-id-here"  # Replace with your job ID
 
 $schema = Invoke-MgGraphRequest `
@@ -280,6 +287,7 @@ For **Group-based scoping**, add distinguished names to `includedGroups`:
 
 **Step 3: Apply the modified schema:**
 ```powershell
+# MS Graph PowerShell
 $modifiedSchema = $schema  # After adding your scoping filters
 
 $response = Invoke-MgGraphRequest `
@@ -294,6 +302,7 @@ $response = Invoke-MgGraphRequest `
 Configure the on-premises AD domain name:
 
 ```powershell
+# MS Graph PowerShell
 $domainName = "contoso.lab"  # Replace with your AD domain name
 
 $body = @{
@@ -315,6 +324,7 @@ $response = Invoke-MgGraphRequest `
 #### 3.9 Start the Synchronization Job
 
 ```powershell
+# MS Graph PowerShell
 $response = Invoke-MgGraphRequest `
    -Method POST `
    -Uri "https://graph.microsoft.com/beta/servicePrincipals/$servicePrincipalId/synchronization/jobs/$jobId/start" `
@@ -331,6 +341,7 @@ Content-type: application/json
 #### 3.10 Verify Job Status
 
 ```powershell
+# MS Graph PowerShell
 $response = Invoke-MgGraphRequest `
    -Method GET `
    -Uri "https://graph.microsoft.com/beta/servicePrincipals/$servicePrincipalId/synchronization/jobs/$jobId"
@@ -347,6 +358,7 @@ Look for `status.code` to be **Active** or **Running**.
 #### Stop the Synchronization Job
 
 ```powershell
+# MS Graph PowerShell
 Invoke-MgGraphRequest `
    -Method POST `
    -Uri "https://graph.microsoft.com/beta/servicePrincipals/$servicePrincipalId/synchronization/jobs/$jobId/stop" `
@@ -356,6 +368,7 @@ Invoke-MgGraphRequest `
 #### Delete the Synchronization Job
 
 ```powershell
+# MS Graph PowerShell
 Invoke-MgGraphRequest `
    -Method DELETE `
    -Uri "https://graph.microsoft.com/beta/servicePrincipals/$servicePrincipalId/synchronization/jobs/$jobId"
@@ -370,6 +383,7 @@ Invoke-MgGraphRequest `
 Before writeback can work, the test user must have Exchange attributes managed in the cloud:
 
 ```powershell
+# Exchange Online PowerShell
 # Connect to Exchange Online
 Connect-ExchangeOnline
 
@@ -383,6 +397,7 @@ Set-Mailbox -Identity <alias> -IsExchangeCloudManaged $true
 #### 4.2 Verify User Eligibility
 
 ```powershell
+# Exchange Online PowerShell
 Get-Mailbox -Identity <alias> | Select-Object DisplayName, IsDirSynced, RecipientType, IsExchangeCloudManaged
 ```
 
@@ -395,20 +410,38 @@ Get-Mailbox -Identity <alias> | Select-Object DisplayName, IsDirSynced, Recipien
 
 1. Modify an Exchange attribute in Exchange Online:
 ```powershell
+# Exchange Online PowerShell
 Set-Mailbox -Identity <alias> -CustomAttribute1 "TestValue_$(Get-Date -Format 'yyyyMMdd_HHmmss')"
 ```
 
+> **Note:** This tests CustomAttribute1. Testing of all 23 writeback attributes is covered in **Section B Test Scenarios**.
+
 2. Wait for sync cycle (delta sync runs every ~2 minutes) or use **Provisioning On Demand**
+
+
+
 
 > **Important:** Users moving into scope for the first time do NOT get provisioned during delta sync cycles (only initial sync cycles). Use **Provisioning On Demand (POD)** API calls to move these objects into scope during delta sync.
 
 #### 4.4 Verify Attributes in AD
 
+**Method 1: Using Active Directory Users and Computers**
 1. Open **Active Directory Users and Computers**
 2. Enable **Advanced Features** (View > Advanced Features)
 3. Navigate to the test user
 4. Right-click > **Properties** > **Attribute Editor** tab
 5. Verify `extensionAttribute1` contains the value set in Exchange Online
+
+**Method 2: Using On-Premises Exchange Management Shell (Recommended)**
+
+This is the ultimate verification - confirming the value is visible in Exchange Server:
+
+```powershell
+# On-Premises Exchange Management Shell
+Get-RemoteMailbox -Identity <alias> | Select-Object CustomAttribute1, CustomAttribute2, ExtensionCustomAttribute1
+```
+
+**Expected Result:** The `CustomAttribute1` value should match what was set in Exchange Online.
 
 ---
 
@@ -444,14 +477,16 @@ Set-Mailbox -Identity <alias> -CustomAttribute1 "TestValue_$(Get-Date -Format 'y
 
 ### Troubleshooting Tips
 
+> **Bug Reporting:** If you encounter bugs or unexpected behavior with the LES Writeback feature, please report to: **Mukesh**, **Aditi**, and **Tristan**.
+
 | Issue | Resolution |
 |-------|------------|
-| Service Principal creation fails | Verify you have Organization.ReadWrite.All and Directory.ReadWrite.All permissions |
-| Job creation fails | Verify Service Principal ID is correct; check template ID spelling |
-| Agent status not Active | Check Windows services are running; verify network connectivity |
+| Agent status not Active | Check Windows services are running; verify network connectivity; restart services if needed |
 | Attributes not writing back | Verify user has `IsExchangeCloudManaged = True`; check provisioning logs |
 | First-time users not syncing | Use Provisioning On Demand (POD) - delta sync only works after initial sync |
 | Sync delays | Delta sync runs every ~2 minutes; use POD for immediate sync |
+| Service Principal creation fails | Verify you have Organization.ReadWrite.All and Directory.ReadWrite.All permissions |
+| Job creation fails | Verify Service Principal ID is correct; check template ID spelling |
 | Job status shows error | Check job secrets (domain name); verify agent connectivity |
 
 ---
@@ -474,7 +509,6 @@ Set-Mailbox -Identity <alias> -CustomAttribute1 "TestValue_$(Get-Date -Format 'y
 | User Type | Description | Example Alias |
 |-----------|-------------|---------------|
 | CU1, CU2, CU3 | Cloud-managed remote mailboxes (dir-synced) | CloudUser1, CloudUser2 |
-| OP1, OP2 | On-premises mailboxes (not migrated) | OnPremUser1, OnPremUser2 |
 | COU1, COU2 | Cloud-only mailboxes (not dir-synced) | CloudOnlyUser1 |
 
 ---
@@ -553,11 +587,11 @@ Set-Mailbox -Identity <alias> -CustomAttribute1 "TestValue_$(Get-Date -Format 'y
 
 ---
 
-### Category 2: Attribute Writeback Validation
+### Category 2: LES Attribute Writeback Validation
 
-#### Scenario 2.1: Writeback of CustomAttribute (extensionAttribute)
+#### Scenario 2.1: Writeback of CustomAttribute1-15 (extensionAttribute1-15)
 
-**Objective:** Verify changes to CustomAttribute in Exchange Online are written back to AD.
+**Objective:** Verify changes to all 15 CustomAttributes in Exchange Online are written back to corresponding extensionAttributes in AD.
 
 **Prerequisites:**
 - Test user CU1 with `IsExchangeCloudManaged = True`
@@ -565,38 +599,103 @@ Set-Mailbox -Identity <alias> -CustomAttribute1 "TestValue_$(Get-Date -Format 'y
 
 **Steps:**
 1. Connect to Exchange Online PowerShell
-2. Set a custom attribute:
+2. Set all 15 custom attributes:
    ```powershell
-   Set-Mailbox -Identity CU1 -CustomAttribute1 "TestValue_$(Get-Date -Format 'yyyyMMdd_HHmmss')"
+   # Exchange Online PowerShell
+   $timestamp = Get-Date -Format 'yyyyMMdd_HHmmss'
+   Set-Mailbox -Identity CU1 `
+       -CustomAttribute1 "Test1_$timestamp" `
+       -CustomAttribute2 "Test2_$timestamp" `
+       -CustomAttribute3 "Test3_$timestamp" `
+       -CustomAttribute4 "Test4_$timestamp" `
+       -CustomAttribute5 "Test5_$timestamp" `
+       -CustomAttribute6 "Test6_$timestamp" `
+       -CustomAttribute7 "Test7_$timestamp" `
+       -CustomAttribute8 "Test8_$timestamp" `
+       -CustomAttribute9 "Test9_$timestamp" `
+       -CustomAttribute10 "Test10_$timestamp" `
+       -CustomAttribute11 "Test11_$timestamp" `
+       -CustomAttribute12 "Test12_$timestamp" `
+       -CustomAttribute13 "Test13_$timestamp" `
+       -CustomAttribute14 "Test14_$timestamp" `
+       -CustomAttribute15 "Test15_$timestamp"
    ```
 3. Wait for sync cycle (up to 2 minutes) OR trigger on-demand provisioning
-4. Open **Active Directory Users and Computers** on-premises
-5. Navigate to user CU1 > **Properties** > **Attribute Editor**
-6. Locate `extensionAttribute1`
+4. Verify in AD using Active Directory Users and Computers:
+   - Navigate to user CU1 > **Properties** > **Attribute Editor**
+   - Check `extensionAttribute1` through `extensionAttribute15`
+5. Verify in On-Premises Exchange Management Shell:
+   ```powershell
+   # On-Premises Exchange Management Shell
+   Get-RemoteMailbox -Identity CU1 | Select-Object CustomAttribute1, CustomAttribute2, CustomAttribute3, CustomAttribute4, CustomAttribute5, CustomAttribute6, CustomAttribute7, CustomAttribute8, CustomAttribute9, CustomAttribute10, CustomAttribute11, CustomAttribute12, CustomAttribute13, CustomAttribute14, CustomAttribute15
+   ```
 
 **Expected Results:**
-- `extensionAttribute1` in AD contains the value set in Exchange Online
-- Provisioning audit logs show successful writeback
+
+| Exchange Online Parameter | AD Attribute | Expected Value |
+|---------------------------|--------------|----------------|
+| CustomAttribute1 | extensionAttribute1 | Test1_[timestamp] |
+| CustomAttribute2 | extensionAttribute2 | Test2_[timestamp] |
+| CustomAttribute3 | extensionAttribute3 | Test3_[timestamp] |
+| CustomAttribute4 | extensionAttribute4 | Test4_[timestamp] |
+| CustomAttribute5 | extensionAttribute5 | Test5_[timestamp] |
+| CustomAttribute6 | extensionAttribute6 | Test6_[timestamp] |
+| CustomAttribute7 | extensionAttribute7 | Test7_[timestamp] |
+| CustomAttribute8 | extensionAttribute8 | Test8_[timestamp] |
+| CustomAttribute9 | extensionAttribute9 | Test9_[timestamp] |
+| CustomAttribute10 | extensionAttribute10 | Test10_[timestamp] |
+| CustomAttribute11 | extensionAttribute11 | Test11_[timestamp] |
+| CustomAttribute12 | extensionAttribute12 | Test12_[timestamp] |
+| CustomAttribute13 | extensionAttribute13 | Test13_[timestamp] |
+| CustomAttribute14 | extensionAttribute14 | Test14_[timestamp] |
+| CustomAttribute15 | extensionAttribute15 | Test15_[timestamp] |
+
+- All 15 attributes in AD contain the values set in Exchange Online
+- Provisioning audit logs show successful writeback for all attributes
 
 ---
 
-#### Scenario 2.2: Writeback of ExtensionCustomAttribute
+#### Scenario 2.2: Writeback of ExtensionCustomAttribute1-5 (msExchExtensionCustomAttribute1-5)
 
-**Objective:** Verify changes to ExtensionCustomAttribute are written back to AD.
+**Objective:** Verify changes to all 5 ExtensionCustomAttributes in Exchange Online are written back to corresponding msExchExtensionCustomAttributes in AD.
 
 **Prerequisites:** Test user CU1 with `IsExchangeCloudManaged = True`
 
 **Steps:**
 1. Connect to Exchange Online PowerShell
-2. Set an extension custom attribute:
+2. Set all 5 extension custom attributes:
    ```powershell
-   Set-Mailbox -Identity CU1 -ExtensionCustomAttribute1 "ExtTestValue_$(Get-Date -Format 'yyyyMMdd_HHmmss')"
+   # Exchange Online PowerShell
+   $timestamp = Get-Date -Format 'yyyyMMdd_HHmmss'
+   Set-Mailbox -Identity CU1 `
+       -ExtensionCustomAttribute1 "ExtTest1_$timestamp" `
+       -ExtensionCustomAttribute2 "ExtTest2_$timestamp" `
+       -ExtensionCustomAttribute3 "ExtTest3_$timestamp" `
+       -ExtensionCustomAttribute4 "ExtTest4_$timestamp" `
+       -ExtensionCustomAttribute5 "ExtTest5_$timestamp"
    ```
 3. Wait for sync cycle or trigger on-demand provisioning
-4. Check AD attribute `msExchExtensionCustomAttribute1` for user CU1
+4. Verify in AD using Active Directory Users and Computers:
+   - Navigate to user CU1 > **Properties** > **Attribute Editor**
+   - Check `msExchExtensionCustomAttribute1` through `msExchExtensionCustomAttribute5`
+5. Verify in On-Premises Exchange Management Shell:
+   ```powershell
+   # On-Premises Exchange Management Shell
+   Get-RemoteMailbox -Identity CU1 | Select-Object ExtensionCustomAttribute1, ExtensionCustomAttribute2, ExtensionCustomAttribute3, ExtensionCustomAttribute4, ExtensionCustomAttribute5
+   ```
 
 **Expected Results:**
-- `msExchExtensionCustomAttribute1` in AD matches the value set in Exchange Online
+
+| Exchange Online Parameter | AD Attribute | Expected Value |
+|---------------------------|--------------|----------------|
+| ExtensionCustomAttribute1 | msExchExtensionCustomAttribute1 | ExtTest1_[timestamp] |
+| ExtensionCustomAttribute2 | msExchExtensionCustomAttribute2 | ExtTest2_[timestamp] |
+| ExtensionCustomAttribute3 | msExchExtensionCustomAttribute3 | ExtTest3_[timestamp] |
+| ExtensionCustomAttribute4 | msExchExtensionCustomAttribute4 | ExtTest4_[timestamp] |
+| ExtensionCustomAttribute5 | msExchExtensionCustomAttribute5 | ExtTest5_[timestamp] |
+
+- All 5 ExtensionCustomAttributes in AD contain the values set in Exchange Online
+- Provisioning audit logs show successful writeback for all attributes
 
 ---
 
@@ -631,6 +730,7 @@ Set-Mailbox -Identity <alias> -CustomAttribute1 "TestValue_$(Get-Date -Format 'y
 1. Connect to Exchange Online PowerShell
 2. Set multiple attributes:
    ```powershell
+   # Exchange Online PowerShell
    Set-Mailbox -Identity CU1 -CustomAttribute2 "MultiTest1" -CustomAttribute3 "MultiTest2" -ExtensionCustomAttribute2 "ExtMultiTest"
    ```
 3. Wait for sync cycle or trigger on-demand provisioning
@@ -643,76 +743,179 @@ Set-Mailbox -Identity <alias> -CustomAttribute1 "TestValue_$(Get-Date -Format 'y
 
 ---
 
-### Category 3: Out-of-Scope Behavior Tests
+#### Scenario 2.5: Writeback of Mailbox Type Change (RecipientTypeDetails)
 
-#### Scenario 3.1: Writeback Skipped When IsExchangeCloudManaged is False
+**Objective:** Verify changes to mailbox type (User to Equipment, Shared, Room, etc.) are written back to AD via msExchRecipientTypeDetails attribute.
 
-**Objective:** Verify attribute changes are NOT written back when user is not cloud-managed.
-
-**Prerequisites:** Test user CU2 with `IsExchangeCloudManaged = False`
+**Prerequisites:**
+- Test user CU1 with `IsExchangeCloudManaged = True`
+- User currently has a regular User mailbox
 
 **Steps:**
-1. Verify user status:
+1. Connect to Exchange Online PowerShell
+2. Record current recipient type details:
    ```powershell
+   # Exchange Online PowerShell
+   Get-Mailbox -Identity CU1 | Select-Object DisplayName, RecipientTypeDetails
+   ```
+3. Convert mailbox to Shared mailbox:
+   ```powershell
+   # Exchange Online PowerShell
+   Set-Mailbox -Identity CU1 -Type Shared
+   ```
+4. Wait for sync cycle or trigger on-demand provisioning
+5. Verify in On-Premises Exchange Management Shell:
+   ```powershell
+   # On-Premises Exchange Management Shell
+   Get-RemoteMailbox -Identity CU1 | Select-Object DisplayName, RecipientTypeDetails
+   ```
+6. Verify in AD Attribute Editor:
+   - Check `msExchRecipientTypeDetails` and `msExchRecipientDisplayType` values
+
+**Expected Results:**
+- `msExchRecipientTypeDetails` in AD reflects the new mailbox type
+- `msExchRecipientDisplayType` in AD is updated accordingly
+- On-Premises Exchange shows the correct RecipientTypeDetails
+
+**Additional Test Variations:**
+| Conversion | Command | Expected msExchRecipientTypeDetails |
+|------------|---------|-------------------------------------|
+| User → Shared | `Set-Mailbox -Identity CU1 -Type Shared` | SharedMailbox |
+| User → Room | `Set-Mailbox -Identity CU1 -Type Room` | RoomMailbox |
+| User → Equipment | `Set-Mailbox -Identity CU1 -Type Equipment` | EquipmentMailbox |
+| Shared → User | `Set-Mailbox -Identity CU1 -Type Regular` | UserMailbox |
+
+---
+
+### Category 3: Behavior When IsExchangeCloudManaged is False
+
+This category tests the behavior when a user's `IsExchangeCloudManaged` property is set to `False`. In this state:
+- Cloud-to-on-premises writeback should **NOT** occur
+- On-premises values should become the source of authority and sync **TO** the cloud
+
+#### Scenario 3.1: Verify Writeback Stops and On-Premises Becomes Source of Authority
+
+**Objective:** Verify that when `IsExchangeCloudManaged = False`:
+1. Changes made in Exchange Online are NOT written back to on-premises AD
+2. On-premises AD becomes the source of authority
+3. Changes made on-premises sync UP to Exchange Online
+
+**Prerequisites:**
+- Test user CU2 initially with `IsExchangeCloudManaged = True` (cloud-managed)
+- LES Writeback job running
+
+**Steps:**
+
+**Part A: Disable Cloud Management**
+1. Connect to Exchange Online PowerShell
+2. Record current attribute values:
+   ```powershell
+   # Exchange Online PowerShell
+   Get-Mailbox -Identity CU2 | Select-Object IsExchangeCloudManaged, CustomAttribute5, CustomAttribute6
+   ```
+3. Disable cloud management:
+   ```powershell
+   # Exchange Online PowerShell
+   Set-Mailbox -Identity CU2 -IsExchangeCloudManaged $false
+   ```
+4. Verify the change:
+   ```powershell
+   # Exchange Online PowerShell
    Get-Mailbox -Identity CU2 | Select-Object IsExchangeCloudManaged
    ```
-2. Attempt to set a custom attribute:
+
+**Part B: Verify Cloud Changes Do NOT Sync to On-Premises**
+1. Make a change in Exchange Online:
    ```powershell
-   Set-Mailbox -Identity CU2 -CustomAttribute5 "ShouldNotSync"
+   # Exchange Online PowerShell
+   Set-Mailbox -Identity CU2 -CustomAttribute5 "CloudValue_ShouldNotSync"
    ```
-3. Wait for sync cycle
-4. Check AD attribute `extensionAttribute5` for user CU2
+2. Wait for sync cycle (up to 5 minutes)
+3. Check on-premises AD attribute:
+   ```powershell
+   # On-Premises Exchange Management Shell
+   Get-RemoteMailbox -Identity CU2 | Select-Object CustomAttribute5
+   ```
+
+**Part C: Verify On-Premises Changes Sync TO Cloud**
+1. Make a change on-premises in AD or Exchange Server:
+   ```powershell
+   # On-Premises Exchange Management Shell
+   Set-RemoteMailbox -Identity CU2 -CustomAttribute6 "OnPremValue_$(Get-Date -Format 'yyyyMMdd_HHmmss')"
+   ```
+2. Wait for Entra Connect Sync cycle (or force sync with `Start-ADSyncSyncCycle -PolicyType Delta`)
+3. Check Exchange Online:
+   ```powershell
+   # Exchange Online PowerShell
+   Get-Mailbox -Identity CU2 | Select-Object CustomAttribute5, CustomAttribute6
+   ```
 
 **Expected Results:**
-- `extensionAttribute5` in AD does NOT contain "ShouldNotSync"
-- Audit logs show operation was skipped (ImportSkipped event)
+
+| Test | Expected Outcome |
+|------|------------------|
+| Part A | `IsExchangeCloudManaged = False` |
+| Part B | `CustomAttribute5` on-premises does NOT contain "CloudValue_ShouldNotSync" |
+| Part B | Audit logs show operation was skipped (ImportSkipped event) |
+| Part C | `CustomAttribute6` in Exchange Online contains the value set on-premises |
+| Part C | On-premises is now source of authority for Exchange attributes |
 
 ---
 
-#### Scenario 3.2: User Moves Out of Scope After SOA Transfer
+#### Scenario 3.2: Non-Writeback Attribute Changes Do Not Sync to On-Premises
 
-**Objective:** Verify writeback stops when object-level SOA is transferred to cloud.
+**Objective:** Verify that changes to Exchange attributes that are NOT in the writeback scope do NOT sync to on-premises AD.
 
-**Prerequisites:** Test user CU3 initially with attribute-level SOA in cloud
+**Prerequisites:**
+- Test user CU1 with `IsExchangeCloudManaged = True`
+- LES Writeback job running
 
-**Steps:**
-1. Document current state of user CU3 in AD
-2. Transfer object-level SOA to cloud (making user cloud-only)
-3. Set a custom attribute in Exchange Online:
-   ```powershell
-   Set-Mailbox -Identity CU3 -CustomAttribute6 "AfterSOATransfer"
-   ```
-4. Wait for sync cycle
-5. Check if attribute was written back to AD
+**Background:** The LES Writeback feature only syncs the following 23 attributes:
+- extensionAttribute1-15 (CustomAttribute1-15)
+- msExchExtensionCustomAttribute1-5 (ExtensionCustomAttribute1-5)
+- msExchRecipientDisplayType
+- msExchRecipientTypeDetails
+- proxyAddresses
 
-**Expected Results:**
-- User is now out of scope for LES writeback
-- Attribute changes are NOT written to AD
-- Audit logs reflect user is out of scope
-
----
-
-#### Scenario 3.3: User Moves Back In Scope
-
-**Objective:** Verify writeback resumes when user moves back in scope.
-
-**Prerequisites:** Test user previously out of scope
+Other mailbox attributes (e.g., DisplayName, Department, Office, etc.) are NOT part of the writeback scope.
 
 **Steps:**
-1. Enable cloud management for user:
+1. Connect to Exchange Online PowerShell
+2. Record current DisplayName value:
    ```powershell
-   Set-Mailbox -Identity CU2 -IsExchangeCloudManaged $true
+   # Exchange Online PowerShell
+   Get-Mailbox -Identity CU1 | Select-Object DisplayName
    ```
-2. Set a custom attribute:
+3. Record current on-premises DisplayName:
    ```powershell
-   Set-Mailbox -Identity CU2 -CustomAttribute7 "BackInScope"
+   # On-Premises Exchange Management Shell
+   Get-RemoteMailbox -Identity CU1 | Select-Object DisplayName
    ```
-3. Trigger on-demand provisioning or wait for sync cycle
-4. Check AD attribute
+4. Change a non-writeback attribute in Exchange Online:
+   ```powershell
+   # Exchange Online PowerShell
+   Set-Mailbox -Identity CU1 -DisplayName "CloudModified_DisplayName_$(Get-Date -Format 'yyyyMMdd')"
+   ```
+5. Wait for multiple sync cycles (10+ minutes)
+6. Check on-premises value:
+   ```powershell
+   # On-Premises Exchange Management Shell
+   Get-RemoteMailbox -Identity CU1 | Select-Object DisplayName
+   ```
 
 **Expected Results:**
-- `extensionAttribute7` in AD contains "BackInScope"
-- Writeback is functioning for this user again
+- DisplayName in Exchange Online is updated to "CloudModified_DisplayName_[date]"
+- DisplayName on-premises remains UNCHANGED
+- Only the 23 writeback-scoped attributes are synced to on-premises
+- Audit logs do NOT show any sync attempt for non-writeback attributes
+
+**Additional Non-Writeback Attributes to Test:**
+| Attribute | Exchange Online Command | Should NOT Sync |
+|-----------|-------------------------|-----------------|
+| DisplayName | `Set-Mailbox -DisplayName "..."` | ✓ |
+| Office | `Set-Mailbox -Office "..."` | ✓ |
+| Department | `Set-User -Department "..."` | ✓ |
+| Title | `Set-User -Title "..."` | ✓ |
 
 ---
 
