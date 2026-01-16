@@ -17,9 +17,7 @@ Cloud Sync LES Writeback enables customers to synchronize specific Exchange attr
 | Prerequisite | Status |
 |--------------|--------|
 | Exchange Hybrid environment configured | Assumed |
-| AD Schema extended for Exchange Server | Assumed |
-| Microsoft Entra Connect Sync installed | Assumed |
-| Exchange Online licenses assigned | Required |
+| Microsoft Entra Connect Sync installed | Optional |
 | Hybrid Identity Administrator role | Required |
 
 ### Required Permissions
@@ -42,7 +40,7 @@ Cloud Sync LES Writeback enables customers to synchronize specific Exchange attr
 5. Select **Accept terms & download**
 6. Save the file `AADConnectProvisioningAgentSetup.exe` to your downloads folder
 
-![Download Agent](https://learn.microsoft.com/en-us/entra/identity/hybrid/cloud-sync/media/how-to-install/install-1.png)
+![Download Agent](images/download-agent.png)
 *Screenshot: Download on-premises agent from Entra Admin Center*
 
 #### 1.2 Install the Agent
@@ -52,8 +50,8 @@ Cloud Sync LES Writeback enables customers to synchronize specific Exchange attr
 3. Select **Install**
 4. Wait for installation to complete - the configuration wizard opens automatically
 
-![Install Agent](https://learn.microsoft.com/en-us/entra/identity/hybrid/cloud-sync/media/how-to-install/install-2.png)
-*Screenshot: Agent installation wizard*
+![Install Agent](images/license-terms.png)
+*Screenshot: Agent installation wizard - License terms*
 
 #### 1.3 Configure Service Account (gMSA)
 
@@ -67,7 +65,7 @@ Cloud Sync LES Writeback enables customers to synchronize specific Exchange attr
 5. If creating gMSA, provide **Active Directory domain administrator credentials**
 6. Select **Next**
 
-![Configure gMSA](https://learn.microsoft.com/en-us/entra/identity/hybrid/cloud-sync/media/how-to-install/install-4.png)
+![Configure gMSA](images/configure-gmsa.png)
 *Screenshot: Configure service account options*
 
 #### 1.4 Connect Active Directory Domain
@@ -111,8 +109,8 @@ Cloud Sync LES Writeback enables customers to synchronize specific Exchange attr
 2. Navigate to **Identity** > **Hybrid management** > **Microsoft Entra Connect** > **Cloud sync**
 3. Click **+ New configuration**
 
-![New Configuration](https://learn.microsoft.com/en-us/entra/identity/hybrid/cloud-sync/media/how-to-configure/new-configuration.png)
-*Screenshot: Create new Cloud Sync configuration*
+![New Configuration](images/configured-domains.png)
+*Screenshot: Cloud Sync configuration with configured domains*
 
 #### 2.2 Select Sync Direction
 
@@ -121,7 +119,7 @@ Cloud Sync LES Writeback enables customers to synchronize specific Exchange attr
 3. Enable **Password hash sync** (optional but recommended)
 4. Click **Create**
 
-![Configuration Settings](https://learn.microsoft.com/en-us/entra/identity/hybrid/cloud-sync/media/how-to-configure/configure-1.png)
+![Configuration Settings](images/configure-1.png)
 *Screenshot: Cloud Sync configuration settings*
 
 #### 2.3 Configure Scoping (Optional)
