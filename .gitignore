@@ -6,3 +6,8 @@
 
 # Windows
 Thumbs.db
+
+# Source documents - keep private, do not publish
+*.docx
+*.ps1
+CLAUDE.md
