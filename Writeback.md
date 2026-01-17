@@ -2,17 +2,30 @@
 
 This document covers the enablement and testing of the Exchange Online Attribute Writeback feature for Last Exchange Server (LES) enabled mailboxes. This feature allows Exchange attributes modified in the cloud to be synchronized back to on-premises Active Directory.
 
-
-
 ---
 
-## A. Detailed Steps to Enable the Writeback Feature
-
-### Overview
+## Overview
 
 Cloud Sync LES Writeback enables customers to synchronize specific Exchange attributes from Exchange Online back to on-premises Active Directory. This is designed for directory-synchronized users who have had an LES Transfer performed, where:
 - Object-level Source of Authority (SOA) remains in AD
 - Attribute-level SOA for Exchange attributes is in Exchange Online/Entra ID
+
+---
+
+## Glossary
+
+| Acronym | Full Name | Description |
+|---------|-----------|-------------|
+| LES | Last Exchange Server | Feature allowing customers to decommission their last on-premises Exchange server while maintaining hybrid functionality |
+| SOA | Source of Authority | The authoritative source for an object or attribute - determines where changes should be made and synced from |
+| POD | Provisioning On Demand | MSGraph API feature to trigger immediate sync for specific users without waiting for scheduled sync cycles |
+| AD | Active Directory | Microsoft's on-premises directory service |
+| gMSA | Group Managed Service Account | A managed domain account providing automatic password management for services |
+| OU | Organizational Unit | A container in Active Directory used to organize objects |
+
+---
+
+## A. Detailed Steps to Enable the Writeback Feature
 
 ### Prerequisites (Assumed Already in Place)
 
@@ -31,9 +44,9 @@ Cloud Sync LES Writeback enables customers to synchronize specific Exchange attr
 
 ---
 
-### Part 1: Install Microsoft Entra Cloud Sync Provisioning Agent
+### A.1 Install Microsoft Entra Cloud Sync Provisioning Agent
 
-#### 1.1 Download the Provisioning Agent
+#### A.1.1 Download the Provisioning Agent
 
 1. Sign in to the [Microsoft Entra admin center](https://entra.microsoft.com) as a **Hybrid Identity Administrator**
 2. Navigate to **Identity** > **Hybrid management** > **Microsoft Entra Connect** > **Cloud sync**
@@ -45,7 +58,7 @@ Cloud Sync LES Writeback enables customers to synchronize specific Exchange attr
 ![Download Agent](images/download-agent.png)
 *Screenshot: Download on-premises agent from Entra Admin Center*
 
-#### 1.2 Install the Agent
+#### A.1.2 Install the Agent
 
 1. Run `AADConnectProvisioningAgentSetup.exe` from your downloads folder
 2. Check the **"I agree to the license terms and conditions"** checkbox
@@ -55,7 +68,7 @@ Cloud Sync LES Writeback enables customers to synchronize specific Exchange attr
 ![Install Agent](images/license-terms.png)
 *Screenshot: Agent installation wizard - License terms*
 
-#### 1.3 Configure Service Account (gMSA)
+#### A.1.3 Configure Service Account (gMSA)
 
 1. On the **Select Extension** screen, select:
    - **HR-driven provisioning (Workday and SuccessFactors) / Microsoft Entra Connect cloud sync**
@@ -70,7 +83,7 @@ Cloud Sync LES Writeback enables customers to synchronize specific Exchange attr
 ![Configure gMSA](images/configure-gmsa.png)
 *Screenshot: Configure service account options*
 
-#### 1.4 Connect Active Directory Domain
+#### A.1.4 Connect Active Directory Domain
 
 1. On the **Connect Active Directory** screen:
    - If your domain name appears under "Configured domains", skip to next step
@@ -82,7 +95,7 @@ Cloud Sync LES Writeback enables customers to synchronize specific Exchange attr
 6. Wait for agent registration and restart
 7. Select **Exit** after verification notification
 
-#### 1.5 Verify Agent Installation
+#### A.1.5 Verify Agent Installation
 
 **In Azure Portal:**
 1. Sign in to [Microsoft Entra admin center](https://entra.microsoft.com)
@@ -103,9 +116,9 @@ Cloud Sync LES Writeback enables customers to synchronize specific Exchange attr
 
 ---
 
-### Part 2: Configure Cloud Sync
+### A.2 Configure Cloud Sync
 
-#### 2.1 Create New Configuration
+#### A.2.1 Create New Configuration
 
 1. Sign in to [Microsoft Entra admin center](https://entra.microsoft.com) as **Hybrid Identity Administrator**
 2. Navigate to **Identity** > **Hybrid management** > **Microsoft Entra Connect** > **Cloud sync**
@@ -114,7 +127,7 @@ Cloud Sync LES Writeback enables customers to synchronize specific Exchange attr
 ![New Configuration](images/configured-domains.png)
 *Screenshot: Cloud Sync configuration with configured domains*
 
-#### 2.2 Select Sync Direction
+#### A.2.2 Select Sync Direction
 
 1. Select **AD to Microsoft Entra ID sync**
 2. On the configuration screen, select your domain
@@ -124,7 +137,7 @@ Cloud Sync LES Writeback enables customers to synchronize specific Exchange attr
 ![Configuration Settings](images/configure-1.png)
 *Screenshot: Cloud Sync configuration settings*
 
-#### 2.3 Configure Scoping (Optional)
+#### A.2.3 Configure Scoping (Optional)
 
 To restrict which AD objects receive synchronized changes:
 
@@ -138,11 +151,22 @@ To restrict which AD objects receive synchronized changes:
 
 ---
 
-### Part 3: Enable LES Writeback via MSGraph API
+### A.3 Enable LES Writeback via MSGraph API
 
 LES Writeback is configured using Microsoft Graph API to create a service principal and synchronization job. This is different from the standard Exchange Hybrid Writeback checkbox in Cloud Sync.
 
-#### 3.1 Connect to Microsoft Graph
+> **Important - LES Writeback vs Exchange Hybrid Writeback:**
+>
+> | Feature | Exchange Hybrid Writeback (GA) | LES Writeback (This Document) |
+> |---------|-------------------------------|-------------------------------|
+> | Configuration Method | Checkbox in Cloud Sync UI | MSGraph API calls |
+> | Application Template ID | N/A | `3b99513e-0cee-4291-aea8-84356239fb82` |
+> | Job Template ID | N/A | `Entra2ADExchangeOnlineAttributeWriteback` |
+> | Target Scenario | Standard hybrid writeback | LES-enabled mailboxes with cloud SOA for Exchange attributes |
+>
+> This document covers **LES Writeback** using the MSGraph API method, NOT the GA checkbox feature.
+
+#### A.3.1 Connect to Microsoft Graph
 
 Open PowerShell and connect with the required scopes:
 
@@ -153,7 +177,7 @@ Connect-MgGraph -Scopes "Organization.ReadWrite.All"
 Connect-MgGraph -Scopes "Directory.ReadWrite.All"
 ```
 
-#### 3.2 Enable Organization for Sync
+#### A.3.2 Enable Organization for Sync
 
 ```powershell
 # MS Graph PowerShell
@@ -165,7 +189,7 @@ $params = @{
 Update-MgOrganization -OrganizationId $organizationId -BodyParameter $params
 ```
 
-#### 3.3 Create Service Principal for LES Writeback
+#### A.3.3 Create Service Principal for LES Writeback
 
 Create a service principal using the LES Writeback application template:
 
@@ -198,7 +222,7 @@ Content-type: application/json
 
 > **Important:** Save the **Service Principal ID** from the response - you'll need it for subsequent steps.
 
-#### 3.4 Get Service Principal ID
+#### A.3.4 Get Service Principal ID
 
 ```powershell
 # MS Graph PowerShell
@@ -207,7 +231,7 @@ $servicePrincipalId = Get-MgServicePrincipal -Filter "displayName eq 'contoso.la
 $servicePrincipalId
 ```
 
-#### 3.5 Create Synchronization Job
+#### A.3.5 Create Synchronization Job
 
 **Using MS Graph PowerShell:**
 ```powershell
@@ -237,7 +261,7 @@ Content-type: application/json
 
 > **Important:** Save the **Job ID** from the response for subsequent steps.
 
-#### 3.6 Verify Job Creation
+#### A.3.6 Verify Job Creation
 
 ```powershell
 # MS Graph PowerShell
@@ -250,7 +274,7 @@ $response | ConvertTo-Json -Depth 10
 
 Copy the Job ID from the output (format: `Entra2ADExchangeOnlineAttributeWriteback.[unique-id].[unique-id]`)
 
-#### 3.7 (Optional) Configure AD Scoping
+#### A.3.7 (Optional) Configure AD Scoping
 
 To restrict which AD objects receive synchronized changes, modify the job schema:
 
@@ -299,7 +323,7 @@ $response = Invoke-MgGraphRequest `
    -ContentType "application/json"
 ```
 
-#### 3.8 Set Synchronization Job Secrets
+#### A.3.8 Set Synchronization Job Secrets
 
 Configure the on-premises AD domain name:
 
@@ -323,7 +347,7 @@ $response = Invoke-MgGraphRequest `
    -ContentType "application/json"
 ```
 
-#### 3.9 Start the Synchronization Job
+#### A.3.9 Start the Synchronization Job
 
 ```powershell
 # MS Graph PowerShell
@@ -340,7 +364,7 @@ Content-type: application/json
 {}
 ```
 
-#### 3.10 Verify Job Status
+#### A.3.10 Verify Job Status
 
 ```powershell
 # MS Graph PowerShell
@@ -378,9 +402,9 @@ Invoke-MgGraphRequest `
 
 ---
 
-### Part 4: Verify LES Writeback Configuration
+### A.4 Verify LES Writeback Configuration
 
-#### 4.1 Enable Cloud Management for Test User
+#### A.4.1 Enable Cloud Management for Test User
 
 Before writeback can work, the test user must have Exchange attributes managed in the cloud:
 
@@ -396,7 +420,7 @@ Get-Mailbox -ResultSize Unlimited | Select-Object Alias, DisplayName
 Set-Mailbox -Identity <alias> -IsExchangeCloudManaged $true
 ```
 
-#### 4.2 Verify User Eligibility
+#### A.4.2 Verify User Eligibility
 
 ```powershell
 # Exchange Online PowerShell
@@ -408,7 +432,7 @@ Get-Mailbox -Identity <alias> | Select-Object DisplayName, IsDirSynced, Recipien
 - `RecipientType = UserMailbox`
 - `IsExchangeCloudManaged = True`
 
-#### 4.3 Test Attribute Writeback
+#### A.4.3 Test Attribute Writeback
 
 1. Modify an Exchange attribute in Exchange Online:
 ```powershell
@@ -418,14 +442,45 @@ Set-Mailbox -Identity <alias> -CustomAttribute1 "TestValue_$(Get-Date -Format 'y
 
 > **Note:** This tests CustomAttribute1. Testing of all 23 writeback attributes is covered in **Section B Test Scenarios**.
 
-2. Wait for sync cycle (delta sync runs every ~2 minutes) or use **Provisioning On Demand**
+2. Wait for sync cycle (delta sync runs every ~2 minutes) or use **Provisioning On Demand (POD)**
 
+**Using Provisioning On Demand (POD) for Immediate Sync:**
 
+POD allows you to trigger an immediate sync for a specific user without waiting for the regular delta sync cycle. This is especially useful for:
+- Testing writeback functionality
+- Users moving into scope for the first time (who don't get provisioned during delta sync)
 
+```powershell
+# MS Graph PowerShell
+# Trigger on-demand provisioning for a specific user
+$userObjectId = "user-object-id-here"  # The Entra ID object ID of the user
+
+$body = @{
+    parameters = @(
+        @{
+            subjects = @(
+                @{
+                    objectId = $userObjectId
+                    objectTypeName = "user"
+                }
+            )
+            ruleId = "yourRuleId"  # Get from schema
+        }
+    )
+} | ConvertTo-Json -Depth 10
+
+$response = Invoke-MgGraphRequest `
+   -Method POST `
+   -Uri "https://graph.microsoft.com/beta/servicePrincipals/$servicePrincipalId/synchronization/jobs/$jobId/provisionOnDemand" `
+   -Body $body `
+   -ContentType "application/json"
+
+$response | ConvertTo-Json -Depth 10
+```
 
 > **Important:** Users moving into scope for the first time do NOT get provisioned during delta sync cycles (only initial sync cycles). Use **Provisioning On Demand (POD)** API calls to move these objects into scope during delta sync.
 
-#### 4.4 Verify Attributes in AD
+#### A.4.4 Verify Attributes in AD
 
 **Method 1: Using Active Directory Users and Computers**
 1. Open **Active Directory Users and Computers**
@@ -477,6 +532,28 @@ Get-RemoteMailbox -Identity <alias> | Select-Object CustomAttribute1, CustomAttr
 
 ---
 
+### Important Warnings and Recommendations
+
+> **Offboarding Warning:**
+> Before migrating a mailbox back to on-premises, you **MUST** set `IsExchangeCloudManaged` to `$false`. Failure to do so may cause synchronization conflicts where cloud and on-premises values compete for authority.
+>
+> ```powershell
+> # Exchange Online PowerShell
+> # ALWAYS run this BEFORE migrating mailbox back on-premises
+> Set-Mailbox -Identity <alias> -IsExchangeCloudManaged $false
+> ```
+
+> **Backup Before Rollback:**
+> Before reverting SOA to on-premises (setting `IsExchangeCloudManaged = $false`), backup any cloud modifications that are not in the writeback scope. These non-writeback attributes will be overwritten by on-premises values during the next sync cycle. Export the mailbox properties first:
+>
+> ```powershell
+> # Exchange Online PowerShell
+> # Backup mailbox properties before rollback
+> Get-Mailbox -Identity <alias> | Export-Csv -Path "MailboxBackup_$(Get-Date -Format 'yyyyMMdd').csv" -NoTypeInformation
+> ```
+
+---
+
 ### Troubleshooting Tips
 
 > **Bug Reporting:** If you encounter bugs or unexpected behavior with the LES Writeback feature, please report to: **Mukesh**, **Aditi**, and **Tristan**.
@@ -515,9 +592,9 @@ Get-RemoteMailbox -Identity <alias> | Select-Object CustomAttribute1, CustomAttr
 
 ---
 
-### Category 1: Prerequisites Validation
+### Test Category 1: Prerequisites Validation
 
-#### Scenario 1.1: Verify Cloud Sync Agent Installation
+#### Test-1.1: Verify Cloud Sync Agent Installation
 
 **Objective:** Confirm the Cloud Sync provisioning agent is properly installed and active.
 
@@ -536,11 +613,11 @@ Get-RemoteMailbox -Identity <alias> | Select-Object CustomAttribute1, CustomAttr
 
 ---
 
-#### Scenario 1.2: Verify LES Writeback Job is Running
+#### Test-1.2: Verify LES Writeback Job is Running
 
 **Objective:** Confirm the LES Writeback synchronization job is created and running.
 
-**Prerequisites:** LES Writeback configured via MSGraph API (Part 3 completed).
+**Prerequisites:** LES Writeback configured via MSGraph API (Section A.3 completed).
 
 **Steps:**
 1. Connect to Microsoft Graph and check job status:
@@ -566,7 +643,7 @@ Get-RemoteMailbox -Identity <alias> | Select-Object CustomAttribute1, CustomAttr
 
 ---
 
-#### Scenario 1.3: Verify User Eligibility for Writeback
+#### Test-1.3: Verify User Eligibility for Writeback
 
 **Objective:** Confirm test user meets eligibility requirements for LES writeback.
 
@@ -590,15 +667,15 @@ Get-RemoteMailbox -Identity <alias> | Select-Object CustomAttribute1, CustomAttr
 
 ---
 
-### Category 2: LES Attribute Writeback Validation
+### Test Category 2: LES Attribute Writeback Validation
 
-#### Scenario 2.1: Writeback of CustomAttribute1-15 (extensionAttribute1-15)
+#### Test-2.1: Writeback of CustomAttribute1-15 (extensionAttribute1-15)
 
 **Objective:** Verify changes to all 15 CustomAttributes in Exchange Online are written back to corresponding extensionAttributes in AD.
 
 **Prerequisites:**
 - Test user CU1 with `IsExchangeCloudManaged = True`
-- LES Writeback job running (Scenario 1.2 passed)
+- LES Writeback job running (Test-1.2 passed)
 
 **Steps:**
 1. Connect to Exchange Online PowerShell
@@ -658,7 +735,7 @@ Get-RemoteMailbox -Identity <alias> | Select-Object CustomAttribute1, CustomAttr
 
 ---
 
-#### Scenario 2.2: Writeback of ExtensionCustomAttribute1-5 (msExchExtensionCustomAttribute1-5)
+#### Test-2.2: Writeback of ExtensionCustomAttribute1-5 (msExchExtensionCustomAttribute1-5)
 
 **Objective:** Verify changes to all 5 ExtensionCustomAttributes in Exchange Online are written back to corresponding msExchExtensionCustomAttributes in AD.
 
@@ -702,7 +779,7 @@ Get-RemoteMailbox -Identity <alias> | Select-Object CustomAttribute1, CustomAttr
 
 ---
 
-#### Scenario 2.3: Writeback of proxyAddresses (EmailAddresses)
+#### Test-2.3: Writeback of proxyAddresses (EmailAddresses)
 
 **Objective:** Verify changes to email addresses are written back to AD.
 
@@ -735,7 +812,7 @@ Get-RemoteMailbox -Identity <alias> | Select-Object CustomAttribute1, CustomAttr
 
 ---
 
-#### Scenario 2.4: Writeback of Multiple Attributes Simultaneously
+#### Test-2.4: Writeback of Multiple Attributes Simultaneously
 
 **Objective:** Verify multiple attribute changes are written back correctly in a single sync.
 
@@ -769,7 +846,7 @@ Get-RemoteMailbox -Identity <alias> | Select-Object CustomAttribute1, CustomAttr
 
 ---
 
-#### Scenario 2.5: Writeback of Mailbox Type Change (RecipientTypeDetails)
+#### Test-2.5: Writeback of Mailbox Type Change (RecipientTypeDetails)
 
 **Objective:** Verify changes to mailbox type (User to Equipment, Shared, Room, etc.) are written back to AD via msExchRecipientTypeDetails attribute.
 
@@ -813,13 +890,13 @@ Get-RemoteMailbox -Identity <alias> | Select-Object CustomAttribute1, CustomAttr
 
 ---
 
-### Category 3: Behavior When IsExchangeCloudManaged is False
+### Test Category 3: Behavior When IsExchangeCloudManaged is False
 
 This category tests the behavior when a user's `IsExchangeCloudManaged` property is set to `False`. In this state:
 - Cloud-to-on-premises writeback should **NOT** occur
 - On-premises values should become the source of authority and sync **TO** the cloud
 
-#### Scenario 3.1: Verify Writeback Stops and On-Premises Becomes Source of Authority
+#### Test-3.1: Verify Writeback Stops and On-Premises Becomes Source of Authority
 
 **Objective:** Verify that when `IsExchangeCloudManaged = False`:
 1. Changes made in Exchange Online are NOT written back to on-premises AD
@@ -888,7 +965,7 @@ This category tests the behavior when a user's `IsExchangeCloudManaged` property
 
 ---
 
-#### Scenario 3.2: Non-Writeback Attribute Changes Do Not Sync to On-Premises
+#### Test-3.2: Non-Writeback Attribute Changes Do Not Sync to On-Premises
 
 **Objective:** Verify that changes to Exchange attributes that are NOT in the writeback scope do NOT sync to on-premises AD.
 
@@ -945,9 +1022,83 @@ Other mailbox attributes (e.g., DisplayName, Department, Office, etc.) are NOT p
 
 ---
 
-### Category 4: Integration Tests
+#### Test-3.3: Object SOA Transfer - User Becomes Cloud-Only (IsDirSynced = False)
 
-#### Scenario 4.1: Mail Flow After Enabling Writeback
+**Objective:** Verify the behavior when a user's full Object-level Source of Authority (SOA) is transferred to the cloud, making the user cloud-only (`IsDirSynced = False`). In this state, the user should move OUT of LES Writeback scope entirely.
+
+**Background:** LES Writeback is designed for directory-synced users (`IsDirSynced = True`) where:
+- Object-level SOA remains in AD
+- Only attribute-level SOA for Exchange attributes is in the cloud
+
+When a user becomes cloud-only (full object SOA transferred to cloud), they are no longer in scope for LES Writeback because there is no longer an AD object to write back to.
+
+**Prerequisites:**
+- Test user CU3 initially with:
+  - `IsDirSynced = True`
+  - `IsExchangeCloudManaged = True`
+- LES Writeback job running and functional
+- Entra Connect Sync configured
+
+**Steps:**
+
+**Part A: Verify Initial State (Dir-Synced with Writeback)**
+1. Verify user is dir-synced and cloud-managed:
+   ```powershell
+   # Exchange Online PowerShell
+   Get-Mailbox -Identity CU3 | Select-Object DisplayName, IsDirSynced, IsExchangeCloudManaged
+   ```
+2. Set a custom attribute and verify writeback works:
+   ```powershell
+   # Exchange Online PowerShell
+   Set-Mailbox -Identity CU3 -CustomAttribute10 "BeforeSOATransfer_$(Get-Date -Format 'yyyyMMdd_HHmmss')"
+   ```
+3. Wait for sync cycle and verify on-premises:
+   ```powershell
+   # On-Premises Exchange Management Shell
+   Get-RemoteMailbox -Identity CU3 | Select-Object CustomAttribute10
+   ```
+
+**Part B: Transfer Object SOA to Cloud (Remove from AD Sync Scope)**
+1. In Entra Connect Sync, remove user CU3 from sync scope (move to OU not in sync scope, or filter out)
+2. Wait for sync cycle to complete
+3. In Entra ID, soft-match or convert user to cloud-only
+4. Verify user is now cloud-only:
+   ```powershell
+   # Exchange Online PowerShell
+   Get-Mailbox -Identity CU3 | Select-Object DisplayName, IsDirSynced, IsExchangeCloudManaged
+   ```
+
+**Part C: Verify User is Out of Writeback Scope**
+1. Make a change in Exchange Online:
+   ```powershell
+   # Exchange Online PowerShell
+   Set-Mailbox -Identity CU3 -CustomAttribute10 "AfterSOATransfer_ShouldNotWriteBack"
+   ```
+2. Wait for sync cycle
+3. Check provisioning logs for the user - should show user out of scope
+4. Verify AD object (if it still exists) is NOT updated
+
+**Expected Results:**
+
+| Test | Expected Outcome |
+|------|------------------|
+| Part A | `IsDirSynced = True`, writeback functions normally |
+| Part B | `IsDirSynced = False` after SOA transfer |
+| Part C | User is OUT of LES Writeback scope |
+| Part C | Provisioning logs show user skipped (out of scope) |
+| Part C | No writeback occurs for cloud-only users |
+
+**Key Insight:** When full Object SOA transfers to the cloud:
+- User becomes cloud-only (`IsDirSynced = False`)
+- User automatically moves OUT of LES Writeback scope
+- `IsExchangeCloudManaged` property becomes irrelevant for writeback (no AD object to write to)
+- This is different from Test-3.1 where `IsExchangeCloudManaged = False` but user is still dir-synced
+
+---
+
+### Test Category 4: Integration Tests
+
+#### Test-4.1: Mail Flow After Enabling Writeback
 
 **Objective:** Verify mail flow continues to work correctly with writeback enabled.
 
@@ -968,7 +1119,7 @@ Other mailbox attributes (e.g., DisplayName, Department, Office, etc.) are NOT p
 
 ---
 
-#### Scenario 4.2: Free/Busy Lookup with Writeback Enabled
+#### Test-4.2: Free/Busy Lookup with Writeback Enabled
 
 **Objective:** Verify Free/Busy functionality works correctly with writeback enabled.
 
@@ -988,7 +1139,7 @@ Other mailbox attributes (e.g., DisplayName, Department, Office, etc.) are NOT p
 
 ---
 
-#### Scenario 4.3: Mailbox Migration with Writeback Active
+#### Test-4.3: Mailbox Migration with Writeback Active
 
 **Objective:** Verify mailbox migration continues to work with writeback enabled.
 
@@ -1038,9 +1189,9 @@ Other mailbox attributes (e.g., DisplayName, Department, Office, etc.) are NOT p
 
 ---
 
-### Category 5: Rollback and Disable Tests
+### Test Category 5: Rollback and Disable Tests
 
-#### Scenario 5.1: Stop LES Writeback Job
+#### Test-5.1: Stop LES Writeback Job
 
 **Objective:** Verify the LES Writeback synchronization job can be stopped cleanly.
 
@@ -1049,15 +1200,18 @@ Other mailbox attributes (e.g., DisplayName, Department, Office, etc.) are NOT p
 **Steps:**
 1. Connect to Microsoft Graph:
    ```powershell
+   # MS Graph PowerShell
    Connect-MgGraph -Scopes "Directory.ReadWrite.All"
    ```
 2. Get Service Principal and Job IDs:
    ```powershell
+   # MS Graph PowerShell
    $servicePrincipalId = Get-MgServicePrincipal -Filter "displayName eq 'contoso.lab'" | Select-Object -ExpandProperty Id
    # Get job ID from previous configuration
    ```
 3. Stop the synchronization job:
    ```powershell
+   # MS Graph PowerShell
    Invoke-MgGraphRequest `
       -Method POST `
       -Uri "https://graph.microsoft.com/beta/servicePrincipals/$servicePrincipalId/synchronization/jobs/$jobId/stop" `
@@ -1065,6 +1219,7 @@ Other mailbox attributes (e.g., DisplayName, Department, Office, etc.) are NOT p
    ```
 4. Verify job status:
    ```powershell
+   # MS Graph PowerShell
    $response = Invoke-MgGraphRequest `
       -Method GET `
       -Uri "https://graph.microsoft.com/beta/servicePrincipals/$servicePrincipalId/synchronization/jobs/$jobId"
@@ -1072,6 +1227,7 @@ Other mailbox attributes (e.g., DisplayName, Department, Office, etc.) are NOT p
    ```
 5. Set a custom attribute for a test user:
    ```powershell
+   # Exchange Online PowerShell
    Set-Mailbox -Identity CU1 -CustomAttribute8 "AfterJobStop"
    ```
 6. Wait for what would be a sync cycle
@@ -1084,15 +1240,16 @@ Other mailbox attributes (e.g., DisplayName, Department, Office, etc.) are NOT p
 
 ---
 
-#### Scenario 5.2: Restart LES Writeback Job
+#### Test-5.2: Restart LES Writeback Job
 
 **Objective:** Verify the LES Writeback job can be restarted after being stopped.
 
-**Prerequisites:** LES Writeback job previously stopped (Scenario 5.1)
+**Prerequisites:** LES Writeback job previously stopped (Test-5.1)
 
 **Steps:**
 1. Restart the synchronization job:
    ```powershell
+   # MS Graph PowerShell
    Invoke-MgGraphRequest `
       -Method POST `
       -Uri "https://graph.microsoft.com/beta/servicePrincipals/$servicePrincipalId/synchronization/jobs/$jobId/start" `
@@ -1101,6 +1258,7 @@ Other mailbox attributes (e.g., DisplayName, Department, Office, etc.) are NOT p
 2. Verify job status shows **Active** or **Running**
 3. Set a custom attribute:
    ```powershell
+   # Exchange Online PowerShell
    Set-Mailbox -Identity CU1 -CustomAttribute9 "AfterJobRestart"
    ```
 4. Wait for sync cycle or trigger on-demand provisioning
@@ -1112,7 +1270,7 @@ Other mailbox attributes (e.g., DisplayName, Department, Office, etc.) are NOT p
 
 ---
 
-#### Scenario 5.3: Delete LES Writeback Job
+#### Test-5.3: Delete LES Writeback Job
 
 **Objective:** Verify the LES Writeback job can be completely deleted.
 
@@ -1121,6 +1279,7 @@ Other mailbox attributes (e.g., DisplayName, Department, Office, etc.) are NOT p
 **Steps:**
 1. Stop the job first (if running):
    ```powershell
+   # MS Graph PowerShell
    Invoke-MgGraphRequest `
       -Method POST `
       -Uri "https://graph.microsoft.com/beta/servicePrincipals/$servicePrincipalId/synchronization/jobs/$jobId/stop" `
@@ -1128,12 +1287,14 @@ Other mailbox attributes (e.g., DisplayName, Department, Office, etc.) are NOT p
    ```
 2. Delete the synchronization job:
    ```powershell
+   # MS Graph PowerShell
    Invoke-MgGraphRequest `
       -Method DELETE `
       -Uri "https://graph.microsoft.com/beta/servicePrincipals/$servicePrincipalId/synchronization/jobs/$jobId"
    ```
 3. Verify job no longer exists:
    ```powershell
+   # MS Graph PowerShell
    $response = Invoke-MgGraphRequest `
       -Method GET `
       -Uri "https://graph.microsoft.com/beta/servicePrincipals/$servicePrincipalId/synchronization/jobs"
@@ -1147,7 +1308,7 @@ Other mailbox attributes (e.g., DisplayName, Department, Office, etc.) are NOT p
 
 ---
 
-#### Scenario 5.4: Revert User to On-Premises Management
+#### Test-5.4: Revert User to On-Premises Management
 
 **Objective:** Verify user can be reverted to on-premises management and writeback stops.
 
@@ -1156,10 +1317,12 @@ Other mailbox attributes (e.g., DisplayName, Department, Office, etc.) are NOT p
 **Steps:**
 1. Disable cloud management:
    ```powershell
+   # Exchange Online PowerShell
    Set-Mailbox -Identity CU1 -IsExchangeCloudManaged $false
    ```
 2. Verify setting:
    ```powershell
+   # Exchange Online PowerShell
    Get-Mailbox -Identity CU1 | Select-Object IsExchangeCloudManaged
    ```
 3. On-premises, modify the user's custom attribute in AD
@@ -1197,6 +1360,7 @@ Other mailbox attributes (e.g., DisplayName, Department, Office, etc.) are NOT p
 #### PowerShell for Audit Log Review
 
 ```powershell
+# MS Graph PowerShell
 # Connect to Microsoft Graph
 Connect-MgGraph -Scopes "AuditLog.Read.All"
 
