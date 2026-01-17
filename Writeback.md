@@ -927,18 +927,34 @@ This category tests the behavior when a user's `IsExchangeCloudManaged` property
    Get-Mailbox -Identity CU2 | Select-Object IsExchangeCloudManaged
    ```
 
-**Part B: Verify Cloud Changes Do NOT Sync to On-Premises**
-1. Make a change in Exchange Online:
+**Part B: Verify Limited Cloud Editing Capabilities**
+
+When `IsExchangeCloudManaged = False`, only mailbox **Type** changes are allowed in Exchange Online. All other writeback attribute changes should result in an error.
+
+1. **Verify attribute changes are blocked** - Attempt to change a custom attribute (should fail):
    ```powershell
    # Exchange Online PowerShell
-   Set-Mailbox -Identity CU2 -CustomAttribute5 "CloudValue_ShouldNotSync"
+   # This should return an ERROR because IsExchangeCloudManaged = False
+   Set-Mailbox -Identity CU2 -CustomAttribute5 "CloudValue_ShouldFail"
    ```
-2. Wait for sync cycle (up to 5 minutes)
-3. Check on-premises AD attribute:
+   **Expected:** Error message indicating the attribute cannot be modified when cloud management is disabled.
+
+2. **Verify mailbox type change is allowed** - Change the mailbox type (should succeed):
+   ```powershell
+   # Exchange Online PowerShell
+   # This should SUCCEED - Type changes are allowed even when IsExchangeCloudManaged = False
+   Set-Mailbox -Identity CU2 -Type Shared
+   ```
+   **Expected:** Command succeeds. Mailbox type is changed.
+
+3. Wait for sync cycle (up to 5 minutes)
+
+4. Verify mailbox type change synced to on-premises:
    ```powershell
    # On-Premises Exchange Management Shell
-   Get-RemoteMailbox -Identity CU2 | Select-Object CustomAttribute5
+   Get-RemoteMailbox -Identity CU2 | Select-Object RecipientTypeDetails
    ```
+   **Expected:** RecipientTypeDetails reflects the new type (SharedMailbox).
 
 **Part C: Verify On-Premises Changes Sync TO Cloud**
 1. Make a change on-premises in AD or Exchange Server:
@@ -965,7 +981,7 @@ This category tests the behavior when a user's `IsExchangeCloudManaged` property
 
 ---
 
-#### Test-3.2: Non-Writeback Attribute Changes Do Not Sync to On-Premises
+#### Test-3.2: Non-Writeback Exchange Attribute Changes Do Not Sync to On-Premises
 
 **Objective:** Verify that changes to Exchange attributes that are NOT in the writeback scope do NOT sync to on-premises AD.
 
@@ -973,52 +989,61 @@ This category tests the behavior when a user's `IsExchangeCloudManaged` property
 - Test user CU1 with `IsExchangeCloudManaged = True`
 - LES Writeback job running
 
-**Background:** The LES Writeback feature only syncs the following 23 attributes:
-- extensionAttribute1-15 (CustomAttribute1-15)
-- msExchExtensionCustomAttribute1-5 (ExtensionCustomAttribute1-5)
-- msExchRecipientDisplayType
-- msExchRecipientTypeDetails
-- proxyAddresses
+**Background - Attribute Categories:**
 
-Other mailbox attributes (e.g., DisplayName, Department, Office, etc.) are NOT part of the writeback scope.
+There are three categories of attributes in LES:
+
+| Category | SOA | Writeback | Examples |
+|----------|-----|-----------|----------|
+| **Identity Attributes** | Always on-premises | N/A (cannot edit in EXO) | DisplayName, Department, Title, givenName, sn |
+| **Exchange Attributes (Writeback)** | Cloud when enabled | ✓ Yes | CustomAttribute1-15, ExtensionCustomAttribute1-5, proxyAddresses, msExchRecipientTypeDetails |
+| **Exchange Attributes (Non-Writeback)** | Cloud when enabled | ✗ No | ArchiveName, RetentionComment, EnableModeration, ModeratedBy |
+
+**Important:** This test focuses on **Exchange Non-Writeback** attributes - attributes that CAN be edited in Exchange Online but are NOT synced back to on-premises AD. Do not confuse with Identity attributes (like DisplayName) which cannot be edited in Exchange Online at all.
 
 **Steps:**
 1. Connect to Exchange Online PowerShell
-2. Record current DisplayName value:
+2. Record current ArchiveName value:
    ```powershell
    # Exchange Online PowerShell
-   Get-Mailbox -Identity CU1 | Select-Object DisplayName
+   Get-Mailbox -Identity CU1 | Select-Object ArchiveName
    ```
-3. Record current on-premises DisplayName:
+3. Record current on-premises ArchiveName (if archive exists):
    ```powershell
    # On-Premises Exchange Management Shell
-   Get-RemoteMailbox -Identity CU1 | Select-Object DisplayName
+   Get-RemoteMailbox -Identity CU1 | Select-Object ArchiveName
    ```
-4. Change a non-writeback attribute in Exchange Online:
+4. Change a non-writeback Exchange attribute in Exchange Online:
    ```powershell
    # Exchange Online PowerShell
-   Set-Mailbox -Identity CU1 -DisplayName "CloudModified_DisplayName_$(Get-Date -Format 'yyyyMMdd')"
+   # Enable archive if not already enabled
+   Enable-Mailbox -Identity CU1 -Archive
+
+   # Set archive name (non-writeback Exchange attribute)
+   Set-Mailbox -Identity CU1 -ArchiveName "CloudArchive_$(Get-Date -Format 'yyyyMMdd')"
    ```
 5. Wait for multiple sync cycles (10+ minutes)
 6. Check on-premises value:
    ```powershell
    # On-Premises Exchange Management Shell
-   Get-RemoteMailbox -Identity CU1 | Select-Object DisplayName
+   Get-RemoteMailbox -Identity CU1 | Select-Object ArchiveName
    ```
 
 **Expected Results:**
-- DisplayName in Exchange Online is updated to "CloudModified_DisplayName_[date]"
-- DisplayName on-premises remains UNCHANGED
+- ArchiveName in Exchange Online is updated to "CloudArchive_[date]"
+- ArchiveName on-premises remains UNCHANGED (or null if not previously set)
 - Only the 23 writeback-scoped attributes are synced to on-premises
 - Audit logs do NOT show any sync attempt for non-writeback attributes
 
-**Additional Non-Writeback Attributes to Test:**
-| Attribute | Exchange Online Command | Should NOT Sync |
-|-----------|-------------------------|-----------------|
-| DisplayName | `Set-Mailbox -DisplayName "..."` | ✓ |
-| Office | `Set-Mailbox -Office "..."` | ✓ |
-| Department | `Set-User -Department "..."` | ✓ |
-| Title | `Set-User -Title "..."` | ✓ |
+**Additional Non-Writeback Exchange Attributes to Test:**
+| Attribute | Exchange Online Command | Writeback? |
+|-----------|-------------------------|------------|
+| ArchiveName | `Set-Mailbox -ArchiveName "..."` | ✗ No |
+| RetentionComment | `Set-Mailbox -RetentionComment "..."` | ✗ No |
+| ModeratedBy | `Set-Mailbox -ModeratedBy "..."` | ✗ No |
+| ModerationEnabled | `Set-Mailbox -ModerationEnabled $true` | ✗ No |
+
+**Note:** Identity attributes (DisplayName, Department, Title, etc.) cannot be edited in Exchange Online at all - they must be modified in on-premises Active Directory.
 
 ---
 
@@ -1058,15 +1083,66 @@ When a user becomes cloud-only (full object SOA transferred to cloud), they are 
    Get-RemoteMailbox -Identity CU3 | Select-Object CustomAttribute10
    ```
 
-**Part B: Transfer Object SOA to Cloud (Remove from AD Sync Scope)**
-1. In Entra Connect Sync, remove user CU3 from sync scope (move to OU not in sync scope, or filter out)
-2. Wait for sync cycle to complete
-3. In Entra ID, soft-match or convert user to cloud-only
-4. Verify user is now cloud-only:
+**Part B: Transfer Object SOA to Cloud**
+
+Reference: [Configure user source of authority](https://learn.microsoft.com/en-us/entra/identity/hybrid/how-to-user-source-of-authority-configure)
+
+**Prerequisites for SOA Transfer:**
+- Entra Connect Sync version **2.5.76.0+** or Cloud Sync version **1.1.1370.0+**
+- **Hybrid Administrator** role
+- **User-OnPremisesSyncBehavior.ReadWrite.All** scope permission
+
+1. Get the user's Entra ID object ID:
+   ```powershell
+   # MS Graph PowerShell
+   Connect-MgGraph -Scopes "User.Read.All"
+   $user = Get-MgUser -Filter "userPrincipalName eq 'CU3@contoso.com'"
+   $userId = $user.Id
+   $userId
+   ```
+
+2. Check current SOA status (should be `false` = on-premises managed):
+   ```powershell
+   # MS Graph PowerShell
+   $response = Invoke-MgGraphRequest `
+      -Method GET `
+      -Uri "https://graph.microsoft.com/v1.0/users/$userId/onPremisesSyncBehavior?`$select=isCloudManaged"
+   $response | ConvertTo-Json
+   ```
+
+3. Transfer Object SOA to Cloud:
+   ```powershell
+   # MS Graph PowerShell
+   Connect-MgGraph -Scopes "User-OnPremisesSyncBehavior.ReadWrite.All"
+
+   $body = @{
+       isCloudManaged = $true
+   } | ConvertTo-Json
+
+   Invoke-MgGraphRequest `
+      -Method PATCH `
+      -Uri "https://graph.microsoft.com/v1.0/users/$userId/onPremisesSyncBehavior" `
+      -Body $body `
+      -ContentType "application/json"
+   ```
+
+4. Validate the SOA transfer:
+   ```powershell
+   # MS Graph PowerShell
+   $response = Invoke-MgGraphRequest `
+      -Method GET `
+      -Uri "https://graph.microsoft.com/v1.0/users/$userId/onPremisesSyncBehavior?`$select=isCloudManaged"
+   $response | ConvertTo-Json
+   ```
+   **Expected:** `isCloudManaged = true`
+
+5. Verify user is now cloud-managed:
    ```powershell
    # Exchange Online PowerShell
    Get-Mailbox -Identity CU3 | Select-Object DisplayName, IsDirSynced, IsExchangeCloudManaged
    ```
+
+**Note:** After SOA transfer, the sync client will set `blockOnPremisesSync = true` on the AD object. Changes in on-premises AD will no longer sync to this user.
 
 **Part C: Verify User is Out of Writeback Scope**
 1. Make a change in Exchange Online:
