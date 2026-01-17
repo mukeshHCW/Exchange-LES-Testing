@@ -1413,41 +1413,6 @@ Reference: [Configure user source of authority](https://learn.microsoft.com/en-u
 
 ---
 
-### Monitoring and Audit Log Verification
-
-#### Checking Provisioning Logs
-
-1. Navigate to **Cloud sync** > select your configuration
-2. Select **Provisioning logs** from the left menu
-3. Filter by:
-   - **Status:** Success, Failure, Skipped
-   - **Action:** Create, Update, Delete
-   - **Date range:** As needed
-
-#### Key Events to Monitor
-
-| Event Type | Description |
-|------------|-------------|
-| Success | Attribute successfully written back to AD |
-| ImportSkipped | User out of scope (IsExchangeCloudManaged = False) |
-| Failure | Writeback failed - check error details |
-| SOA Violation | Attribute-level SOA conflict detected |
-
-#### PowerShell for Audit Log Review
-
-```powershell
-# MS Graph PowerShell
-# Connect to Microsoft Graph
-Connect-MgGraph -Scopes "AuditLog.Read.All"
-
-# Get recent provisioning logs
-Get-MgAuditLogProvisioning -Filter "activityDateTime ge 2024-01-01" |
-    Where-Object {$_.TargetSystem.DisplayName -eq "Active Directory"} |
-    Select-Object ActivityDateTime, Action, ProvisioningStatusInfo
-```
-
----
-
 ## References
 
 - [Exchange hybrid writeback with Cloud Sync](https://learn.microsoft.com/en-us/entra/identity/hybrid/cloud-sync/exchange-hybrid)
