@@ -2,6 +2,8 @@
 
 This document covers the enablement and testing of the Exchange Online Attribute Writeback feature for Last Exchange Server (LES) enabled mailboxes. This feature allows Exchange attributes modified in the cloud to be synchronized back to on-premises Active Directory.
 
+
+
 ---
 
 ## A. Detailed Steps to Enable the Writeback Feature
@@ -541,16 +543,16 @@ Get-RemoteMailbox -Identity <alias> | Select-Object CustomAttribute1, CustomAttr
 **Prerequisites:** LES Writeback configured via MSGraph API (Part 3 completed).
 
 **Steps:**
-1. Connect to Microsoft Graph:
+1. Connect to Microsoft Graph and check job status:
    ```powershell
+   # MS Graph PowerShell
+   # Connect to Microsoft Graph
    Connect-MgGraph -Scopes "Directory.ReadWrite.All"
-   ```
-2. Get the Service Principal ID:
-   ```powershell
+
+   # Get the Service Principal ID (replace domain name with yours)
    $servicePrincipalId = Get-MgServicePrincipal -Filter "displayName eq 'contoso.lab'" | Select-Object -ExpandProperty Id
-   ```
-3. Check job status:
-   ```powershell
+
+   # Check job status
    $response = Invoke-MgGraphRequest `
       -Method GET `
       -Uri "https://graph.microsoft.com/beta/servicePrincipals/$servicePrincipalId/synchronization/jobs"
@@ -571,12 +573,13 @@ Get-RemoteMailbox -Identity <alias> | Select-Object CustomAttribute1, CustomAttr
 **Prerequisites:** Test user CU1 exists as a dir-synced cloud mailbox.
 
 **Steps:**
-1. Connect to Exchange Online PowerShell:
+1. Connect to Exchange Online and verify the mailbox has Exchange attributes managed in the cloud:
    ```powershell
+   # Exchange Online PowerShell
+   # Connect to Exchange Online
    Connect-ExchangeOnline
-   ```
-2. Run the following command:
-   ```powershell
+
+   # Verify the mailbox has Exchange attributes managed in the cloud
    Get-Mailbox -Identity CU1 | Select-Object DisplayName, IsDirSynced, RecipientType, IsExchangeCloudManaged
    ```
 
@@ -706,16 +709,28 @@ Get-RemoteMailbox -Identity <alias> | Select-Object CustomAttribute1, CustomAttr
 **Prerequisites:** Test user CU1 with `IsExchangeCloudManaged = True`
 
 **Steps:**
-1. Connect to Exchange Online PowerShell
-2. Add a new email address:
+1. Connect to Exchange Online and add a new email address:
    ```powershell
+   # Exchange Online PowerShell
+   # Connect to Exchange Online
+   Connect-ExchangeOnline
+
+   # Add a new email address
    Set-Mailbox -Identity CU1 -EmailAddresses @{Add="smtp:testalias@contoso.com"}
    ```
-3. Wait for sync cycle or trigger on-demand provisioning
-4. Check AD attribute `proxyAddresses` for user CU1
+2. Wait for sync cycle (up to 2 minutes) or trigger on-demand provisioning
+3. Verify in AD using Active Directory Users and Computers:
+   - Navigate to user CU1 > **Properties** > **Attribute Editor**
+   - Check `proxyAddresses` attribute
+4. Verify in On-Premises Exchange Management Shell:
+   ```powershell
+   # On-Premises Exchange Management Shell
+   Get-RemoteMailbox -Identity CU1 | Select-Object EmailAddresses
+   ```
 
 **Expected Results:**
 - New email address appears in `proxyAddresses` attribute in AD
+- `Get-RemoteMailbox` shows the new email address in EmailAddresses
 - Existing addresses are preserved
 
 ---
@@ -727,19 +742,30 @@ Get-RemoteMailbox -Identity <alias> | Select-Object CustomAttribute1, CustomAttr
 **Prerequisites:** Test user CU1 with `IsExchangeCloudManaged = True`
 
 **Steps:**
-1. Connect to Exchange Online PowerShell
-2. Set multiple attributes:
+1. Connect to Exchange Online and set multiple attributes:
    ```powershell
    # Exchange Online PowerShell
+   # Connect to Exchange Online
+   Connect-ExchangeOnline
+
+   # Set multiple attributes in a single command
    Set-Mailbox -Identity CU1 -CustomAttribute2 "MultiTest1" -CustomAttribute3 "MultiTest2" -ExtensionCustomAttribute2 "ExtMultiTest"
    ```
-3. Wait for sync cycle or trigger on-demand provisioning
-4. Verify all three attributes in AD
+2. Wait for sync cycle (up to 2 minutes) or trigger on-demand provisioning
+3. Verify in AD using Active Directory Users and Computers:
+   - Navigate to user CU1 > **Properties** > **Attribute Editor**
+   - Check `extensionAttribute2`, `extensionAttribute3`, and `msExchExtensionCustomAttribute2`
+4. Verify in On-Premises Exchange Management Shell:
+   ```powershell
+   # On-Premises Exchange Management Shell
+   Get-RemoteMailbox -Identity CU1 | Select-Object CustomAttribute2, CustomAttribute3, ExtensionCustomAttribute2
+   ```
 
 **Expected Results:**
 - `extensionAttribute2` = "MultiTest1"
 - `extensionAttribute3` = "MultiTest2"
 - `msExchExtensionCustomAttribute2` = "ExtMultiTest"
+- All attributes verified via `Get-RemoteMailbox` on-premises
 
 ---
 
@@ -971,21 +997,44 @@ Other mailbox attributes (e.g., DisplayName, Department, Office, etc.) are NOT p
 - On-premises mailbox OP2 ready for migration
 
 **Steps:**
-1. Initiate migration of OP2 to Exchange Online:
+1. Connect to Exchange Online and initiate migration of OP2:
    ```powershell
+   # Exchange Online PowerShell
+   # Connect to Exchange Online
+   Connect-ExchangeOnline
+
+   # Initiate migration from on-premises to Exchange Online
    New-MoveRequest -Identity OP2 -Remote -RemoteHostName "mail.contoso.com" -TargetDeliveryDomain "contoso.mail.onmicrosoft.com"
    ```
-2. Monitor migration progress
-3. After migration completes, enable cloud management:
+2. Monitor migration progress until completion:
    ```powershell
-   Set-Mailbox -Identity OP2 -IsExchangeCloudManaged $true
+   # Exchange Online PowerShell
+   # Check move request status
+   Get-MoveRequest -Identity OP2 | Select-Object DisplayName, Status, StatusDetail
+
+   # Get detailed migration statistics
+   Get-MoveRequestStatistics -Identity OP2 | Select-Object DisplayName, StatusDetail, PercentComplete
    ```
-4. Set a custom attribute and verify writeback
+3. After migration completes (Status = Completed), enable cloud management and test writeback:
+   ```powershell
+   # Exchange Online PowerShell
+   # Enable cloud management for the migrated mailbox
+   Set-Mailbox -Identity OP2 -IsExchangeCloudManaged $true
+
+   # Set a custom attribute to test writeback
+   Set-Mailbox -Identity OP2 -CustomAttribute1 "MigrationTest_$(Get-Date -Format 'yyyyMMdd_HHmmss')"
+   ```
+4. Wait for sync cycle (up to 2 minutes) or trigger on-demand provisioning
+5. Verify writeback in On-Premises Exchange Management Shell:
+   ```powershell
+   # On-Premises Exchange Management Shell
+   Get-RemoteMailbox -Identity OP2 | Select-Object CustomAttribute1
+   ```
 
 **Expected Results:**
-- Migration completes successfully
-- User can be enabled for cloud management
-- Writeback functions correctly for newly migrated user
+- Migration completes successfully (Status = Completed, PercentComplete = 100)
+- User can be enabled for cloud management (`IsExchangeCloudManaged = True`)
+- Writeback functions correctly - CustomAttribute1 value synced to on-premises
 
 ---
 
