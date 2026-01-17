@@ -13,3 +13,10 @@ Thumbs.db
 CLAUDE.md
 reviewagent.md
 .shadow-docs/
+
+# Internal working files
+comments.md
+plan.md
+
+# Hidden directories (except .gitignore)
+.Plan/
