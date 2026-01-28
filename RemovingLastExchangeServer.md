@@ -6,13 +6,14 @@ This document provides guidance on permanently removing the last on-premises Exc
 
 ## Executive Summary
 
-| Aspect | EMT Path | LES Path |
-|--------|----------|----------|
-| Can Shut Down Exchange? | Yes | Yes |
-| Can Uninstall Exchange? | **No** | **Yes (with conditions)** |
-| AD Container Dependencies | Required | Not Required |
-| Management Location | On-premises (PowerShell) | Cloud (EXO) |
-| Writeback Mechanism | N/A (AD is SOA) | Entra Cloud Sync |
+| Aspect | EMT Path | LES Path (No Writeback) | LES Path (With Writeback) |
+|--------|----------|-------------------------|---------------------------|
+| Can Shut Down Exchange? | Yes | Yes | Yes |
+| Can Uninstall Exchange? | **No** | **Yes (hypothesis)** | **Yes (hypothesis)** |
+| AD Container Dependencies | Required | Not Required | Not Required |
+| Management Location | On-premises (PowerShell) | Cloud (EXO) | Cloud (EXO) |
+| AD Stays Current? | Yes (AD is SOA) | No | Yes (via Entra Cloud Sync) |
+| Writeback Mechanism | N/A | N/A | Entra Cloud Sync |
 
 ---
 
@@ -97,9 +98,51 @@ With LES:
 
 | Scenario | EMT Impact | LES Impact |
 |----------|------------|------------|
-| Exchange Uninstalled | **BROKEN** - Cannot manage recipients | **Works** - Cloud management continues |
-| CleanupActiveDirectoryEMT.ps1 Run | **BROKEN** - Security groups removed | **Works** - Not dependent on these |
+| Exchange Shut Down (not uninstalled) | **Works** | **Works** |
+| CleanupActiveDirectoryEMT.ps1 Run | **Works** - Script designed to work with EMT | **Works** - Not dependent on these |
+| Exchange Uninstalled | **BROKEN** - Cannot manage recipients | **Works** - Cloud management continues (hypothesis) |
 | Schema Extensions Remain | Required for EMT | Required for writeback |
+
+### Understanding CleanupActiveDirectoryEMT.ps1 vs Exchange Uninstall
+
+There is an important distinction between these two operations:
+
+| Operation | What It Removes | EMT Works After? |
+|-----------|-----------------|------------------|
+| **CleanupActiveDirectoryEMT.ps1** | System mailboxes, *unnecessary* Exchange containers, Exchange Security Groups, permissions | **Yes** - Script designed to work with EMT |
+| **Exchange Uninstall** | *All* Exchange AD objects including organization container, server objects, all config | **No** - EMT depends on these objects |
+
+**Key Point:** `CleanupActiveDirectoryEMT.ps1` is specifically designed to be used WITH EMT. It removes security-sensitive objects (like security groups that could be exploited by attackers) while **preserving** the AD objects that EMT needs to function.
+
+**Source:** [Manage Hybrid Exchange Recipients with Management Tools - Active Directory Cleanup](https://learn.microsoft.com/en-us/exchange/manage-hybrid-exchange-recipients-with-management-tools#active-directory-clean-up)
+
+---
+
+## Hypothesis: LES Allows Full Exchange Uninstallation
+
+> **IMPORTANT: This section contains logical analysis that requires testing/verification.**
+
+The hypothesis is that with LES (with or without writeback), Exchange Server can be fully uninstalled because:
+
+### Hypothesis A: LES Without Writeback
+
+1. **Management happens in EXO** - No dependency on EMT or on-premises tools
+2. **No writeback needed** - AD doesn't need to stay current with cloud changes
+3. **No Exchange AD container dependency** - Cloud management doesn't query Exchange containers
+4. **Schema extensions persist** - `msExch*` attributes remain in AD schema (unused without writeback)
+
+**Test Cases:** TC-6B.1 through TC-6B.7
+
+### Hypothesis B: LES With Writeback
+
+1. **Management happens in EXO** - No dependency on EMT or on-premises tools
+2. **Writeback uses Entra Cloud Sync** - Writes directly to `msExch*` user attributes, not via Exchange
+3. **Entra Cloud Sync doesn't need Exchange AD containers** - Only needs schema extensions on user objects
+4. **Schema extensions persist** - `msExch*` attributes remain in AD schema after uninstall
+
+**Test Cases:** TC-6A.1 through TC-6A.7
+
+**Both hypotheses should be validated through testing before production use.**
 
 ---
 
@@ -120,7 +163,16 @@ Get-Mailbox -ResultSize Unlimited |
 # This should return EMPTY if all mailboxes are cloud-managed
 ```
 
-### 2. LES Writeback Configured and Functional
+### 2. LES Writeback Configured (Optional)
+
+LES Writeback is **optional** depending on customer requirements:
+
+| Scenario | Writeback Needed? | Use Case |
+|----------|-------------------|----------|
+| AD must stay current with cloud changes | Yes | Compliance, reporting, on-prem apps reading AD |
+| AD doesn't need cloud changes | No | Cloud-only management, AD is legacy |
+
+**If using LES Writeback:**
 
 ```powershell
 # MS Graph PowerShell
@@ -135,7 +187,12 @@ $response | ConvertTo-Json -Depth 10
 # Verify job status is Active/Running
 ```
 
-### 3. Entra Cloud Sync Agent Active
+**If NOT using LES Writeback:**
+- Skip this prerequisite
+- Cloud management works without writeback
+- AD attributes will NOT reflect cloud changes
+
+### 3. Entra Cloud Sync Agent Active (Required for Writeback Only)
 
 - Agent version 1.1.1107.0 or later
 - Status: Active in Entra Admin Center
@@ -322,44 +379,13 @@ $appId = (Get-OrganizationRelationship ((Get-OnPremisesOrganization).Organizatio
 Remove-HybridApplication -appId $appId -Credential (Get-Credential)
 ```
 
-### Phase 3: Shutdown and Verify
-
-#### Step 3.1: Shut Down Exchange Server
-
-1. Stop all Exchange services
-2. Power off the Exchange Server VM/physical machine
-3. **Do NOT uninstall yet**
-
-#### Step 3.2: Verify LES Continues to Function
-
-```powershell
-# Exchange Online PowerShell
-# Verify you can still manage Exchange attributes
-Set-Mailbox -Identity TestUser -CustomAttribute14 "PostShutdownTest_$(Get-Date -Format 'yyyyMMdd_HHmmss')"
-
-# Verify the change was accepted
-Get-Mailbox -Identity TestUser | Select-Object CustomAttribute14
-```
-
-#### Step 3.3: Verify Writeback Continues (Wait for Sync Cycle)
-
-```powershell
-# On-Premises PowerShell (AD Module)
-# After 2-3 minutes, verify writeback occurred
-Get-ADUser -Identity TestUser -Properties extensionAttribute14 | Select-Object extensionAttribute14
-```
-
-### Phase 4: Uninstall Exchange Server (LES Path Only)
+### Phase 3: Uninstall Exchange Server (LES Path Only)
 
 > **WARNING:** This step is only supported with the LES path where all mailboxes have `IsExchangeCloudManaged = True` and LES Writeback is configured via Entra Cloud Sync.
 >
 > If you are using EMT for management, **DO NOT proceed with uninstallation**.
 
-#### Step 4.1: Power On Exchange Server Temporarily
-
-Power on the Exchange Server to perform uninstallation.
-
-#### Step 4.2: Verify No Mailboxes Remain
+#### Step 3.1: Verify No Mailboxes Remain
 
 ```powershell
 # On-Premises Exchange Management Shell
@@ -369,7 +395,7 @@ Get-Mailbox -Arbitration  # Disable any remaining
 Get-Mailbox -AuditLog  # Disable any remaining
 ```
 
-#### Step 4.3: Uninstall Exchange Server
+#### Step 3.2: Uninstall Exchange Server
 
 Run Exchange Setup to uninstall:
 
@@ -384,7 +410,7 @@ Or via Control Panel:
 2. Select **Microsoft Exchange Server 2019**
 3. Click **Uninstall**
 
-#### Step 4.4: Verify AD Objects Removed
+#### Step 3.3: Verify AD Objects Removed
 
 ```powershell
 # On-Premises PowerShell (AD Module)
@@ -395,9 +421,9 @@ Get-ADObject -Filter 'Name -like "*Exchange*"' -SearchBase "CN=Services,CN=Confi
 Get-ADGroup -Filter 'Name -like "*Exchange*"'
 ```
 
-### Phase 5: Post-Uninstall Verification
+### Phase 4: Post-Uninstall Verification
 
-#### Step 5.1: Verify LES Writeback Still Functions
+#### Step 4.1: Verify LES Writeback Still Functions
 
 This is the critical test - verify that Entra Cloud Sync writeback continues to work after Exchange uninstallation.
 
@@ -417,7 +443,7 @@ Get-ADUser -Identity TestUser -Properties extensionAttribute13 | Select-Object e
 # Should show: PostUninstallTest_[timestamp]
 ```
 
-#### Step 5.2: Verify All 23 Writeback Attributes Function
+#### Step 4.2: Verify All 23 Writeback Attributes Function
 
 ```powershell
 # Exchange Online PowerShell
@@ -437,7 +463,7 @@ Get-ADUser -Identity TestUser -Properties extensionAttribute1, extensionAttribut
     Select-Object extensionAttribute1, extensionAttribute2, msExchExtensionCustomAttribute1
 ```
 
-#### Step 5.3: Verify Email Address Changes Writeback
+#### Step 4.3: Verify Email Address Changes Writeback
 
 ```powershell
 # Exchange Online PowerShell
@@ -518,6 +544,57 @@ Get-ADUser -Identity TestUser -Properties proxyAddresses | Select-Object -Expand
 | TC-5.2 | LES Writeback Job Restart | Stop and start sync job | Writeback resumes |
 | TC-5.3 | Network Interruption | Simulate network outage, restore | Writeback catches up |
 
+### Test Category 6: Hypothesis Verification - LES After Exchange Uninstall
+
+These tests validate the hypothesis that LES continues to function after Exchange Server is uninstalled. Tests cover both scenarios: **with writeback** and **without writeback**.
+
+#### 6A: LES WITH Writeback - After Exchange Uninstall
+
+| Test ID | Test Name | Prerequisites | Steps | Expected Result | Status |
+|---------|-----------|---------------|-------|-----------------|--------|
+| TC-6A.1 | Writeback After Uninstall | Exchange uninstalled, writeback configured | Set CustomAttribute1 in EXO, verify in AD | Value written to AD | To Test |
+| TC-6A.2 | Entra Cloud Sync Status | Exchange uninstalled | Check Cloud Sync agent status in Entra portal | Agent Active, no errors | To Test |
+| TC-6A.3 | LES Writeback Job Status | Exchange uninstalled | Query job via MSGraph API | Job Active/Running | To Test |
+| TC-6A.4 | All 23 Attributes Writeback | Exchange uninstalled | Set all 23 writeback attributes, verify in AD | All values sync to AD | To Test |
+| TC-6A.5 | New User Creation | Exchange uninstalled | Create AD user, sync to Entra, assign license, enable cloud mgmt, set attributes | User created, attributes written back to AD | To Test |
+| TC-6A.6 | User Deletion | Exchange uninstalled | Delete user from AD, verify sync removes from Entra/EXO | User removed from Entra and EXO | To Test |
+| TC-6A.7 | AD Container Verification | Exchange uninstalled | Query AD for Exchange containers | Containers removed, schema remains | To Test |
+
+#### 6B: LES WITHOUT Writeback - After Exchange Uninstall
+
+| Test ID | Test Name | Prerequisites | Steps | Expected Result | Status |
+|---------|-----------|---------------|-------|-----------------|--------|
+| TC-6B.1 | Cloud Management After Uninstall | Exchange uninstalled, NO writeback | Set CustomAttribute1 in EXO | Value accepted in EXO | To Test |
+| TC-6B.2 | AD Not Updated (Expected) | Exchange uninstalled, NO writeback | Set attribute in EXO, check AD | AD value unchanged (expected) | To Test |
+| TC-6B.3 | All EXO Operations Work | Exchange uninstalled, NO writeback | Set all Exchange attributes in EXO | All operations succeed | To Test |
+| TC-6B.4 | New User Creation | Exchange uninstalled, NO writeback | Create AD user, sync to Entra, assign license, enable cloud mgmt, set attributes | User created in EXO, attributes set in EXO, AD not updated | To Test |
+| TC-6B.5 | User Deletion | Exchange uninstalled, NO writeback | Delete user from AD, verify sync removes from Entra/EXO | User removed from Entra and EXO | To Test |
+| TC-6B.6 | Email Address Management | Exchange uninstalled, NO writeback | Add/remove email addresses in EXO | Operations succeed, AD proxyAddresses unchanged | To Test |
+| TC-6B.7 | Mailbox Type Change | Exchange uninstalled, NO writeback | Convert User → Shared in EXO | Conversion succeeds, AD msExchRecipientTypeDetails unchanged | To Test |
+
+**Test Environment Requirements:**
+
+| Environment | Writeback | Exchange State | Purpose |
+|-------------|-----------|----------------|---------|
+| Lab A | Configured | To be uninstalled | Test 6A scenarios |
+| Lab B | NOT configured | To be uninstalled | Test 6B scenarios |
+
+**Test Procedure:**
+
+**For Lab A (With Writeback):**
+1. **Baseline:** Verify LES writeback works with Exchange running
+2. **Uninstall:** Uninstall Exchange Server
+3. **Verify:** Verify writeback continues after uninstallation
+4. **Extended Test:** Test all 23 attributes, new user provisioning
+
+**For Lab B (Without Writeback):**
+1. **Baseline:** Verify LES cloud management works with Exchange running (no writeback)
+2. **Uninstall:** Uninstall Exchange Server
+3. **Verify:** Verify cloud management continues after uninstallation
+4. **Negative Test:** Verify AD is NOT updated (expected behavior without writeback)
+
+**Documentation:** Record results in a test log with timestamps, screenshots, and any error messages.
+
 ---
 
 ## Comparison: EMT vs LES After Exchange Removal
@@ -536,34 +613,28 @@ Get-ADUser -Identity TestUser -Properties proxyAddresses | Select-Object -Expand
 
 ---
 
-## Rollback Procedures
+## Report Bugs
 
-### If Issues Occur After Exchange Uninstallation
+If you encounter bugs or unexpected behavior during Exchange uninstallation testing with the LES feature, please report to:
 
-If LES writeback fails after Exchange uninstallation, you can recover by reinstalling Exchange:
+- **Mukesh**
+- **Aditi**
+- **Tristan**
 
-```powershell
-# Step 1: Prepare Active Directory
-.\Setup.exe /PrepareAD /IAcceptExchangeServerLicenseTerms_DiagnosticDataON
+### Information to Include in Bug Reports
 
-# Step 2: Install Exchange Server 2019 (only 2019 supported)
-.\Setup.exe /Mode:Install /Role:Mailbox /IAcceptExchangeServerLicenseTerms_DiagnosticDataON
-
-# Note: Older Exchange versions (2016, 2013) cannot be installed after AD cleanup
-```
-
-### Revert User to On-Premises Management
-
-```powershell
-# Exchange Online PowerShell
-Set-Mailbox -Identity User1 -IsExchangeCloudManaged $false
-
-# Verify
-Get-Mailbox -Identity User1 | Select-Object IsExchangeCloudManaged
-# Should be: False
-
-# On-premises AD is now SOA for Exchange attributes
-```
+| Information | Description |
+|-------------|-------------|
+| Test Case ID | Which test case failed (e.g., TC-6A.3) |
+| Environment | Lab A (with writeback) or Lab B (without writeback) |
+| Exchange Version | Exchange Server version before uninstallation |
+| Cloud Sync Agent Version | Version number from agent properties |
+| Steps to Reproduce | Exact steps taken |
+| Expected Result | What should have happened |
+| Actual Result | What actually happened |
+| Error Messages | Full error text, screenshots |
+| Timestamps | When the issue occurred |
+| Provisioning Logs | Export from Entra Admin Center if applicable |
 
 ---
 
@@ -591,12 +662,36 @@ After Exchange removal:
 
 ## References
 
-- [Introducing Cloud-Managed Remote Mailboxes](https://techcommunity.microsoft.com/blog/exchange/introducing-cloud-managed-remote-mailboxes-a-step-to-last-exchange-server-retire/4446042)
-- [Enable Exchange Attributes Cloud Management](https://learn.microsoft.com/en-us/exchange/hybrid-deployment/enable-exchange-attributes-cloud-management)
-- [Manage Hybrid Exchange Recipients with Management Tools](https://learn.microsoft.com/en-us/exchange/manage-hybrid-exchange-recipients-with-management-tools)
-- [Decommission On-Premises Exchange](https://learn.microsoft.com/en-us/exchange/decommission-on-premises-exchange)
-- [Removing Your Last Exchange Server FAQ](https://techcommunity.microsoft.com/blog/exchange/removing-your-last-exchange-server-faq/3455411)
-- [Stages of AD Changes When Installing and Uninstalling Exchange](https://blog.rmilne.ca/2021/04/03/stages-of-ad-changes-when-installing-and-uninstalling-exchange/)
-- [How IsExchangeCloudManaged Can Liberate You](https://www.mistercloudtech.com/2025/08/22/how-isexchangecloudmanaged-can-finally-liberate-you-from-the-last-exchange-server/)
-- [The Last Exchange Server in the Organization](https://jaapwesselius.com/2025/08/25/the-last-exchange-server-in-the-organization/)
-- [De-Hybridizing Exchange: Shut Off or Uninstall](https://www.checkyourlogs.net/de-hybridizing-exchange-to-shut-it-off-or-uninstall-pros-cons-and-workarounds/)
+### Microsoft Official Documentation
+
+- [Enable Exchange Attributes Cloud Management](https://learn.microsoft.com/en-us/exchange/hybrid-deployment/enable-exchange-attributes-cloud-management) - LES feature documentation
+- [Manage Hybrid Exchange Recipients with Management Tools](https://learn.microsoft.com/en-us/exchange/manage-hybrid-exchange-recipients-with-management-tools) - EMT documentation, CleanupActiveDirectoryEMT.ps1
+- [Decommission On-Premises Exchange](https://learn.microsoft.com/en-us/exchange/decommission-on-premises-exchange) - Official decommissioning guidance
+
+### Microsoft Community/Blog
+
+- [Introducing Cloud-Managed Remote Mailboxes](https://techcommunity.microsoft.com/blog/exchange/introducing-cloud-managed-remote-mailboxes-a-step-to-last-exchange-server-retire/4446042) - LES feature announcement
+- [Removing Your Last Exchange Server FAQ](https://techcommunity.microsoft.com/blog/exchange/removing-your-last-exchange-server-faq/3455411) - EMT FAQ, why not to uninstall
+
+### Community Articles
+
+- [Stages of AD Changes When Installing and Uninstalling Exchange](https://blog.rmilne.ca/2021/04/03/stages-of-ad-changes-when-installing-and-uninstalling-exchange/) - AD objects created/removed during install/uninstall
+- [How IsExchangeCloudManaged Can Liberate You](https://www.mistercloudtech.com/2025/08/22/how-isexchangecloudmanaged-can-finally-liberate-you-from-the-last-exchange-server/) - LES feature analysis
+- [The Last Exchange Server in the Organization](https://jaapwesselius.com/2025/08/25/the-last-exchange-server-in-the-organization/) - LES and AD dependencies
+- [De-Hybridizing Exchange: Shut Off or Uninstall](https://www.checkyourlogs.net/de-hybridizing-exchange-to-shut-it-off-or-uninstall-pros-cons-and-workarounds/) - Pros/cons analysis
+
+---
+
+## Source Attribution for Key Claims
+
+| Claim | Source | Type |
+|-------|--------|------|
+| Exchange uninstall removes CN=Microsoft Exchange container | [Removing Your Last Exchange Server FAQ](https://techcommunity.microsoft.com/blog/exchange/removing-your-last-exchange-server-faq/3455411) | Documented |
+| Exchange uninstall removes CN=[OrgName] container | [Stages of AD Changes](https://blog.rmilne.ca/2021/04/03/stages-of-ad-changes-when-installing-and-uninstalling-exchange/) | Documented |
+| Schema extensions persist after uninstall | [Stages of AD Changes](https://blog.rmilne.ca/2021/04/03/stages-of-ad-changes-when-installing-and-uninstalling-exchange/) | Documented |
+| CleanupActiveDirectoryEMT.ps1 works WITH EMT | [Manage Hybrid Exchange Recipients](https://learn.microsoft.com/en-us/exchange/manage-hybrid-exchange-recipients-with-management-tools#active-directory-clean-up) | Documented |
+| EMT breaks after Exchange uninstall | [Removing Your Last Exchange Server FAQ](https://techcommunity.microsoft.com/blog/exchange/removing-your-last-exchange-server-faq/3455411) | Documented |
+| LES writeback uses Entra Cloud Sync | [Enable Exchange Attributes Cloud Management](https://learn.microsoft.com/en-us/exchange/hybrid-deployment/enable-exchange-attributes-cloud-management) | Documented |
+| LES (no writeback) continues working after Exchange uninstall | N/A | **Hypothesis - Requires Testing (TC-6B)** |
+| LES (with writeback) continues working after Exchange uninstall | N/A | **Hypothesis - Requires Testing (TC-6A)** |
+| Entra Cloud Sync doesn't need Exchange AD containers | N/A | **Logical inference - Requires Testing** |
