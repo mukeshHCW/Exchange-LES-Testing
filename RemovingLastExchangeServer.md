@@ -150,7 +150,19 @@ The hypothesis is that with LES (with or without writeback), Exchange Server can
 
 Before attempting to uninstall Exchange Server with the LES path, ensure:
 
-### 1. All Mailboxes Cloud-Managed
+### 1. All Mailboxes Migrated to Exchange Online
+
+```powershell
+# On-Premises Exchange Management Shell
+Set-AdServerSettings -ViewEntireForest $true
+Get-Mailbox  # Should return empty
+
+# Disable any remaining system mailboxes
+Get-Mailbox -Arbitration | Disable-Mailbox
+Get-Mailbox -AuditLog | Disable-Mailbox
+```
+
+### 2. All Mailboxes Cloud-Managed
 
 ```powershell
 # Exchange Online PowerShell
@@ -163,7 +175,7 @@ Get-Mailbox -ResultSize Unlimited |
 # This should return EMPTY if all mailboxes are cloud-managed
 ```
 
-### 2. LES Writeback Configured (Optional)
+### 3. LES Writeback Configured (Optional)
 
 LES Writeback is **optional** depending on customer requirements:
 
@@ -173,66 +185,14 @@ LES Writeback is **optional** depending on customer requirements:
 | AD doesn't need cloud changes | No | Cloud-only management, AD is legacy |
 
 **If using LES Writeback:**
-
-```powershell
-# MS Graph PowerShell
-# Verify LES Writeback job is running
-$servicePrincipalId = Get-MgServicePrincipal -Filter "displayName eq 'contoso.lab'" | Select-Object -ExpandProperty Id
-
-$response = Invoke-MgGraphRequest `
-   -Method GET `
-   -Uri "https://graph.microsoft.com/beta/servicePrincipals/$servicePrincipalId/synchronization/jobs"
-
-$response | ConvertTo-Json -Depth 10
-# Verify job status is Active/Running
-```
+- See [Writeback.md](Writeback.md) for detailed setup and testing instructions
 
 **If NOT using LES Writeback:**
 - Skip this prerequisite
 - Cloud management works without writeback
 - AD attributes will NOT reflect cloud changes
 
-### 3. Entra Cloud Sync Agent Active (Required for Writeback Only)
-
-- Agent version 1.1.1107.0 or later
-- Status: Active in Entra Admin Center
-- Heartbeat within last few minutes
-
-### 4. Writeback Tested and Verified
-
-```powershell
-# Exchange Online PowerShell
-# Set a test attribute
-Set-Mailbox -Identity TestUser -CustomAttribute15 "PreUninstallTest_$(Get-Date -Format 'yyyyMMdd_HHmmss')"
-
-# Wait for sync cycle (2 minutes) or use POD
-
-# On-Premises (AD or Exchange if still running)
-# Verify the attribute was written back
-Get-ADUser -Identity TestUser -Properties extensionAttribute15 | Select-Object extensionAttribute15
-```
-
-### 5. All Mailboxes Migrated to Exchange Online
-
-```powershell
-# On-Premises Exchange Management Shell (before shutdown)
-Set-AdServerSettings -ViewEntireForest $true
-Get-Mailbox  # Should return empty
-
-# Disable any remaining system mailboxes
-Get-Mailbox -Arbitration | Disable-Mailbox
-Get-Mailbox -AuditLog | Disable-Mailbox
-```
-
-### 6. Public Folders Migrated (If Applicable)
-
-```powershell
-# Exchange Online PowerShell
-Get-OrganizationConfig | Select-Object PublicFoldersEnabled
-# Should NOT be 'Remote' - migrate PFs first if so
-```
-
-### 7. No SMTP Relay Dependencies
+### 4. No SMTP Relay Dependencies
 
 Ensure on-premises applications using Exchange for SMTP relay have alternatives:
 - Exchange Online SMTP relay
@@ -275,7 +235,7 @@ Get-Mailbox -ResultSize Unlimited |
     }
 ```
 
-#### Step 1.3: Verify LES Writeback is Functional
+#### Step 1.3: Verify LES Writeback is Functional (If Configured)
 
 ```powershell
 # Exchange Online PowerShell
